@@ -1,0 +1,54 @@
+{
+  "profileVersion": 1,
+  "id": "meta-analyst",
+  "name": "Meta Analyst",
+  "description": "A rules-faithful strategic planner using four-Turn economic forecasts, faction doctrines, coalition commitments, opponent archetypes, victory-impact analysis, and adversarial exploit detection without hidden information.",
+  "difficulty": "expert",
+  "planning": {
+    "beamWidth": 64,
+    "candidateLimit": 96,
+    "maxOrders": 12,
+    "threatHorizon": 2,
+    "riskTolerance": 0.58,
+    "reserveByEra": [1, 2, 3, 4],
+    "uncertaintyPenalty": 0.42,
+    "diplomacyHorizon": 3,
+    "gateSafetyMargin": 1,
+    "forecastHorizon": 4,
+    "minimumGateConfidence": 0.88
+  },
+  "priorities": {
+    "legacy": 1.45,
+    "economy": 1.38,
+    "technology": 1.2,
+    "expansion": 1.34,
+    "military": 1.08,
+    "diplomacy": 1.42,
+    "gate": 1.78,
+    "denial": 1.16,
+    "survival": 1.28
+  },
+  "technology": {
+    "Military": 1,
+    "Economy": 1.24,
+    "Policy": 1.08,
+    "Exploration": 1.08,
+    "Resource": 1.12
+  },
+  "behaviors": {
+    "punishFreeRiders": true,
+    "avoidMutualDestruction": true,
+    "protectGateCompletion": true,
+    "preferFlexibleResources": true,
+    "exploitFactionSynergy": true,
+    "recordCounterfactuals": true,
+    "coordinateGateSupport": true,
+    "useMarketForGate": true,
+    "modelOpponents": true,
+    "routeColonies": true,
+    "redTeamNotebook": true,
+    "multiTurnPlanning": true,
+    "factionDoctrine": true,
+    "victoryImpact": true
+  }
+}

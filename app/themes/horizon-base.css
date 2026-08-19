@@ -1,0 +1,5 @@
+[data-theme="horizon-base"]{
+  --ink:#d8e6ed;--muted:#718896;--line:#183746;--panel:#07131a;--deep:#02070a;
+  --cyan:#50dcff;--orange:#f18a3d;--surface-glow:#0d2530;--map-glow:#071822;
+  --game-backdrop:url("/themes/horizon-base/space-background.gif");
+}

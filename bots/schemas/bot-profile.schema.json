@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Horizon Bot Profile",
+  "type": "object",
+  "required": ["profileVersion", "id", "name", "description", "difficulty", "planning", "priorities", "technology", "behaviors"],
+  "properties": {
+    "profileVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" },
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "difficulty": { "enum": ["novice", "standard", "advanced", "expert"] },
+    "planning": {
+      "type": "object",
+      "required": ["beamWidth", "candidateLimit", "maxOrders", "threatHorizon", "riskTolerance", "reserveByEra", "uncertaintyPenalty", "diplomacyHorizon", "gateSafetyMargin", "forecastHorizon", "minimumGateConfidence"]
+    },
+    "priorities": { "type": "object" },
+    "technology": { "type": "object" },
+    "behaviors": { "type": "object" }
+  },
+  "additionalProperties": false
+}

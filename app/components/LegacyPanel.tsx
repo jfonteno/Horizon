@@ -1,0 +1,25 @@
+"use client";
+
+import { useState } from "react";
+import { civilizationLegacy, drawHiddenChoices, hiddenLegacyDeck, legacyCard, legacyObjectiveProgress, manualClaimCivilization, manualClaimUniversal, selectHiddenLegacy, setHiddenCompleted, universalLegacy } from "../../game";
+import type { GameState } from "../../game";
+
+function ProgressBar({value}:{value:ReturnType<typeof legacyObjectiveProgress>}){
+  const width=value.target ? Math.min(100,Math.round(value.current/value.target*100)) : 0;
+  return <div className={`legacy-progress ${value.complete?"complete":""}`}><div><span>PROGRESS</span><b>{value.label}</b></div><i><span style={{width:`${width}%`}}/></i></div>;
+}
+
+export default function LegacyPanel({game,commit,flash}:{game:GameState;commit:(game:GameState)=>void;flash:(message:string)=>void}){
+  const [privateView,setPrivateView]=useState<"closed"|"pass"|"choose">("closed");
+  const p=game.players[game.active],hidden=p.hiddenLegacy[game.era],selected=legacyCard(hidden?.selected);
+  function mutate(action:(draft:GameState)=>boolean,message:string){const draft=structuredClone(game);if(action(draft)){commit(draft);flash(message)}}
+  function reveal(){const draft=structuredClone(game);drawHiddenChoices(draft,p.id,game.era);commit(draft);setPrivateView("pass")}
+  return <section className="legacy-console">
+    <header className="legacy-header"><div><p>SCORING AND ENDGAME // ERA {game.era}</p><h1>Legacy Archive</h1></div><div className="legacy-total"><strong>{p.lp}</strong><span>Total LP</span></div></header>
+    <div className="legacy-breakdown">{Object.entries(p.legacy).map(([key,value])=><div key={key}><span>{key}</span><strong>{value}</strong></div>)}</div>
+    <div className="legacy-columns"><section className="legacy-section"><div className="card-title"><div><span>PUBLIC RACE</span><h2>Universal Legacy</h2></div><small>First unique claimant scores</small></div>{universalLegacy.map(o=>{const claim=game.universalClaims.find(c=>c.objectiveId===o.id),owner=claim&&game.players[claim.playerId],objectiveProgress=legacyObjectiveProgress(game,p.id,o.id);return <article className={`legacy-objective ${claim?"claimed":o.era>game.era?"locked":""}`} key={o.id}><div><span>ERA {o.era}</span><b>{o.name}</b><p>{o.condition}</p><ProgressBar value={objectiveProgress}/></div><strong>{o.lp} LP</strong>{claim?<small>CLAIMED BY {owner!.name}</small>:o.era<=game.era&&!o.automatic?<button onClick={()=>mutate(g=>manualClaimUniversal(g,p.id,o.id),`${o.name} claimed.`)}>Confirm claim</button>:<small>{o.era>game.era?"LOCKED":"AUTOMATIC"}</small>}</article>})}</section>
+    <section className="legacy-section"><div className="card-title"><div><span>FACTION PATH</span><h2>Civilization Legacy</h2></div><small>{p.name}</small></div>{civilizationLegacy[p.faction].map(o=>{const claimed=p.civilizationClaims.includes(o.id),objectiveProgress=legacyObjectiveProgress(game,p.id,o.id);return <article className={`legacy-objective ${claimed?"claimed":""}`} key={o.id}><div><b>{o.name}</b><p>{o.condition}</p><ProgressBar value={objectiveProgress}/></div><strong>{o.lp} LP</strong>{claimed?<small>COMPLETED</small>:!o.automatic?<button onClick={()=>mutate(g=>manualClaimCivilization(g,p.id,o.id),`${o.name} completed.`)}>Confirm completion</button>:<small>AUTOMATIC</small>}</article>})}
+    <div className={`hidden-card ${selected?"":"selection-required"}`}><span>PRIVATE OBJECTIVE // ERA {game.era}</span>{selected?<><h2>{selected.name}</h2><p>{selected.condition}</p><strong>{selected.lp} LP</strong><ProgressBar value={legacyObjectiveProgress(game,p.id,selected.id)}/><small>{hidden?.scored?hidden.completed?"SCORED":"NOT COMPLETED":selected.automatic?"TRACKED AUTOMATICALLY":"TABLE CONFIRMATION REQUIRED"}</small>{!selected.automatic&&!hidden?.scored&&<button onClick={()=>mutate(g=>setHiddenCompleted(g,p.id,!hidden?.completed),hidden?.completed?"Completion removed.":"Completion marked.")}>{hidden?.completed?"Marked complete":"Mark completed"}</button>}</>:<><h2>Hidden Objective required</h2><p>Draw three private objectives and keep one before ending the first Turn of Era {game.era}.</p><button className="primary" onClick={reveal}>Choose Hidden Objective</button></>}</div></section></div>
+    {privateView!=="closed"&&<div className="handoff-overlay legacy-private"><div className="handoff-card">{privateView==="pass"?<><p>PRIVATE LEGACY</p><h1>Pass the device to {p.name}</h1><span>The objective choices are concealed until the active civilization is ready.</span><button className="primary" onClick={()=>setPrivateView("choose")}>I am {p.name}</button></>:<><p>ERA {game.era} HIDDEN LEGACY</p><h1>Choose one objective</h1><div className="hidden-choices">{p.hiddenLegacy[game.era]?.choices.map(id=>{const card=hiddenLegacyDeck.find(c=>c.id===id)!;return <button key={id} onClick={()=>mutate(g=>{const ok=selectHiddenLegacy(g,p.id,id);if(ok)setPrivateView("closed");return ok},`${card.name} selected.`)}><span>{card.lp} LP</span><b>{card.name}</b><small>{card.condition}</small></button>})}</div></>}</div></div>}
+  </section>
+}

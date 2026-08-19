@@ -1,0 +1,2 @@
+import type { FactionDefinition } from "./types";
+export const meridian: FactionDefinition = { id:"meridian", name:"The Meridian", role:"Merchant", color:"#62d5ad", homeProduction:"currency", blurb:"Commercial brokers who begin at Economy II and turn connectivity into value.", objectives:["Broker: broker 3 civilization-pairs","Commercial Network: 3 agreements","Trade Hegemony: earn 8 Currency"], initialize(p){p.resources.currency=2;p.tech.Economy=2} };

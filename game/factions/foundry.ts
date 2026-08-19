@@ -1,0 +1,2 @@
+import type { FactionDefinition } from "./types";
+export const foundry: FactionDefinition = { id:"foundry", name:"The Foundry", role:"Industrial", color:"#d0a34c", homeProduction:"material", blurb:"Material-rich expansionists with prefabricated Habitats and Prospectors.", objectives:["Material Engine: produce 4 Material","Prospector Network: prospect 4 hexes","Industrial Base: 5 Centers across 3 Habitats"], initialize(p){p.resources.material=2} };

@@ -1,0 +1,10 @@
+[data-theme="tactical"]{
+  --ink:#f1e6ca;--muted:#a59672;--line:#574621;--panel:#171205;--deep:#080601;
+  --cyan:#f6b83f;--orange:#ff6838;--surface-glow:#322506;--map-glow:#251a03;
+  filter:saturate(.9) contrast(1.06);
+}
+[data-theme="tactical"].setup{background:radial-gradient(circle at 50% 45%,#322506 0,#100d05 42%,#030200 78%)}
+[data-theme="tactical"].game-shell{background:radial-gradient(circle at 50% 45%,#251a03,#080601 72%)}
+[data-theme="tactical"] .hex-inner{background:radial-gradient(circle,#3a2b0f,#100d07 70%)}
+[data-theme="tactical"] .hex.concealed .hex-inner{background:repeating-linear-gradient(135deg,#100d07,#100d07 5px,#1d170a 5px,#1d170a 10px)!important}
+[data-theme="tactical"] .topbar img,[data-theme="tactical"] .logo{filter:sepia(.7) saturate(1.4)}

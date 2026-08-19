@@ -1,0 +1,2 @@
+import type { FactionDefinition } from "./types";
+export const farbound: FactionDefinition = { id:"farbound", name:"The Farbound", role:"Exploration", color:"#e48db8", homeProduction:"research", blurb:"Surveyors who privately read the Reach and settle discovered worlds efficiently.", objectives:["Survey Network: survey 6 hexes","Frontier Civilization: 3 discounted Habitats","Information Economy: sell surveys to 3 rivals"], initialize(p){p.resources.research=1;p.resources.currency=1} };

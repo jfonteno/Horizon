@@ -1,0 +1,45 @@
+/* Repository and multiplayer foundation */
+.room-setup { margin: 24px auto 0; padding: 16px; border: 1px solid #1d4250; background: rgba(5,18,25,.88); text-align: left; }
+.room-heading { display: flex; justify-content: space-between; gap: 20px; align-items: end; padding-bottom: 10px; border-bottom: 1px solid #183746; }
+.room-heading span { font-size: 8px; letter-spacing: .2em; color: var(--cyan); }
+.room-heading h3 { margin: 4px 0 0; font: 18px Georgia,serif; }
+.room-heading > small { max-width: 350px; color: #718994; line-height: 1.4; }
+.room-setup-grid { display: grid; grid-template-columns: .8fr 1.2fr; gap: 12px; margin-top: 12px; }
+.room-setup-grid > div { padding: 12px; background: #071820; border: 1px solid #173b49; }
+.room-setup-grid b { font-size: 10px; }
+.room-setup-grid p { font-size: 8px; color: #718994; line-height: 1.5; }
+.room-join { display: grid; grid-template-columns: 1fr 72px 1fr auto; gap: 6px; align-items: end; }
+.room-join > b { grid-column: 1/-1; }
+.room-join label { display: grid; gap: 4px; font-size: 7px; text-transform: uppercase; letter-spacing: .08em; color: #6f8792; }
+.room-join input,.room-join select { min-width: 0; background: #06141b; border: 1px solid #28505f; color: #dbeaf0; padding: 8px; }
+.room-join button,.room-resume,.room-actions button,.remote-actions button { border: 1px solid #2b5362; background: #0a1d26; color: #dcebf0; padding: 8px; cursor: pointer; }
+.room-resume { width: 100%; margin-top: 8px; font-size: 8px; }
+.room-error { color: #ef9d87!important; font-size: 8px!important; }
+.room-console > p { font-size: 8px; line-height: 1.5; color: #78909a; }
+.room-code { padding: 14px; margin: 10px 0; border: 1px solid #2a5a6b; text-align: center; background: radial-gradient(circle,#10303d,#071820); }
+.room-code span { display: block; font-size: 7px; text-transform: uppercase; letter-spacing: .18em; color: #6f8792; }
+.room-code strong { display: block; margin-top: 5px; font: 28px Georgia,serif; letter-spacing: .18em; color: var(--cyan); }
+.room-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.room-seats { display: grid; gap: 4px; margin: 10px 0; }
+.room-seats span { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; padding: 7px; border: 1px solid #173845; background: #071820; opacity: .62; }
+.room-seats span.claimed { opacity: 1; border-color: #2b5b69; }
+.room-seats i { font-style: normal; color: var(--cyan); }
+.room-seats b { font-size: 8px; }
+.room-seats small { font-size: 7px; color: #6f8792; }
+.room-message { display: block; margin: 8px 0; color: #91c8d7; }
+.remote-room { min-height: 100vh; display: grid; place-items: center; padding: 40px; background-image: radial-gradient(circle at 50% 40%,rgba(10,40,53,.75),rgba(2,7,10,.96) 72%),var(--game-backdrop); background-size: cover; }
+.remote-card { width: min(820px,90vw); padding: 28px; border: 1px solid #285363; background: rgba(4,15,21,.94); box-shadow: 0 30px 100px #000; }
+.remote-card > img { display: block; width: 250px; height: 100px; object-fit: contain; margin: -20px auto -12px; }
+.remote-card > p { text-align: center; font-size: 8px; letter-spacing: .22em; color: var(--cyan); }
+.remote-card > h1 { text-align: center; font: 32px Georgia,serif; }
+.remote-status { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; }
+.remote-status span { display: flex; justify-content: space-between; padding: 10px; border: 1px solid #173b49; color: #718994; font-size: 8px; text-transform: uppercase; }
+.remote-status b { color: #dcecf2; }
+.remote-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 15px 0; }
+.remote-columns > div { padding: 14px; border: 1px solid #173b49; background: #071820; }
+.remote-columns h3 { margin: 0 0 8px; font: 16px Georgia,serif; }
+.remote-columns span { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid #15333e; }
+.remote-columns span b { font-size: 8px; }
+.remote-columns span small,.remote-columns > div > small { font-size: 7px; color: #718994; }
+.remote-actions { display: flex; justify-content: center; gap: 8px; margin: 15px 0; }
+.remote-card > .muted { display: block; text-align: center; }

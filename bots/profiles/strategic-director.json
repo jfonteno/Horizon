@@ -1,0 +1,59 @@
+{
+  "profileVersion": 1,
+  "id": "strategic-director",
+  "name": "Strategic Director",
+  "description": "An expert multi-turn planner that balances LP conversion, positional tempo, economic compounding, opponent modeling, and Gate survival. It favors reachable scoring paths, preserves optionality, stages toward future objectives instead of waiting for perfect certainty, and uses counterfactual and adversarial analysis without hidden information.",
+  "difficulty": "expert",
+  "planning": {
+    "beamWidth": 40,
+    "candidateLimit": 72,
+    "maxOrders": 10,
+    "threatHorizon": 3,
+    "riskTolerance": 0.55,
+    "reserveByEra": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "uncertaintyPenalty": 0.34,
+    "diplomacyHorizon": 3,
+    "gateSafetyMargin": 2,
+    "forecastHorizon": 4,
+    "minimumGateConfidence": 0.86
+  },
+  "priorities": {
+    "legacy": 1.62,
+    "economy": 1.42,
+    "technology": 1.34,
+    "expansion": 1.52,
+    "military": 1.2,
+    "diplomacy": 1.3,
+    "gate": 1.3,
+    "denial": 1.18,
+    "survival": 1.34
+  },
+  "technology": {
+    "Military": 1.05,
+    "Economy": 1.18,
+    "Policy": 1.1,
+    "Exploration": 1.16,
+    "Resource": 1.16
+  },
+  "behaviors": {
+    "punishFreeRiders": false,
+    "avoidMutualDestruction": true,
+    "protectGateCompletion": true,
+    "preferFlexibleResources": true,
+    "exploitFactionSynergy": true,
+    "recordCounterfactuals": true,
+    "coordinateGateSupport": true,
+    "useMarketForGate": true,
+    "modelOpponents": true,
+    "routeColonies": true,
+    "redTeamNotebook": true,
+    "multiTurnPlanning": true,
+    "factionDoctrine": true,
+    "victoryImpact": true
+  }
+}

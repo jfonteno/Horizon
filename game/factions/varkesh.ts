@@ -1,0 +1,2 @@
+import type { FactionDefinition } from "./types";
+export const varkesh: FactionDefinition = { id:"varkesh", name:"The Varkesh", role:"Military", color:"#dc6b35", homeProduction:"material", blurb:"Cheaper fleets, rapid force projection, and Glory earned through decisive battle.", objectives:["Mobilized Society: 10 CU","Fleet Doctrine: 20 vessel capacity","Conquering Power: 2 captured Habitats"], initialize(p){p.resources.material=1;p.resources.currency=1} };

@@ -1,0 +1,2 @@
+import type { FactionDefinition } from "./types";
+export const helix: FactionDefinition = { id:"helix", name:"The Helix", role:"Science", color:"#69c8ff", homeProduction:"research", blurb:"Research-efficient technology leaders with inexpensive Research Centers.", objectives:["Research Network: 3 Research Centers","Technological Breadth: 3 branches at III","Knowledge Exporter: sell technology twice"], initialize(p){p.resources.research=2} };

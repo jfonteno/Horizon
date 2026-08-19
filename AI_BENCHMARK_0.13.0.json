@@ -1,0 +1,37 @@
+{
+  "profile": "Meta Analyst",
+  "version": "0.13.0",
+  "games": 100,
+  "seedRange": [21000, 21099],
+  "gateSuccessRate": 0.5,
+  "averageGateTributes": 16.32,
+  "previousAverageGateTributes": 11.9,
+  "previousGateSuccessRate": 0.03333333333333333,
+  "averageLPPerCivilization": 5.145,
+  "averageFinalResourcesPerCivilization": 17.311666666666667,
+  "averageHabitatsPerCivilization": 1.96,
+  "averageAcceptedTradesPerGame": 22.21,
+  "averageTechnologyTotalPerCivilization": 5.75,
+  "averageMilitaryCSPerCivilization": 4.248333333333333,
+  "contributionStandardDeviation": 1.141879542197376,
+  "averageOrdersPerTurn": 2.488020833333333,
+  "averageCandidatesPerRecordedDecision": 23.397291666666664,
+  "averageSearchNodesPerRecordedDecision": 184.74291666666667,
+  "averageTributesByFaction": {
+    "varkesh": 3.22,
+    "helix": 1.87,
+    "foundry": 2.35,
+    "farbound": 2.04,
+    "aurelians": 3.58,
+    "meridian": 3.46
+  },
+  "winsInSuccessfulGames": {
+    "varkesh": 3,
+    "helix": 4,
+    "foundry": 5,
+    "farbound": 3,
+    "aurelians": 8,
+    "meridian": 27
+  },
+  "interpretation": "The strategic model materially improved Gate coordination. Meridian's 27 wins among 50 successful games is a faction-balance signal for future rules testing, not an AI exception."
+}

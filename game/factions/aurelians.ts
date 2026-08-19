@@ -1,0 +1,2 @@
+import type { FactionDefinition } from "./types";
+export const aurelians: FactionDefinition = { id:"aurelians", name:"The Aurelians", role:"Diplomatic", color:"#b38cff", homeProduction:"influence", blurb:"Influence specialists who begin at Policy II and thrive on formal agreements.", objectives:["Foreign Service: Envoys with 2 rivals","Diplomatic Web: 3 agreements","Influence Network: 5 bonus Influence"], initialize(p){p.resources.influence=3;p.tech.Policy=2} };
