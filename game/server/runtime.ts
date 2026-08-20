@@ -14,9 +14,26 @@ export function setRoomDatabase(database?: D1Database) {
   }
 }
 
-export function getRoomService() {
+/**
+ * All room API routes and command handlers should obtain the repository through
+ * this function so they share the same persistence backend.
+ */
+export function getRoomRepository(): RoomRepository {
   runtime.__horizonRoomRepository ||= runtime.__horizonRoomDatabase
     ? new D1RoomRepository(runtime.__horizonRoomDatabase)
     : new MemoryRoomRepository();
-  return new RoomService(runtime.__horizonRoomRepository);
+
+  return runtime.__horizonRoomRepository;
+}
+
+export function getRoomService() {
+  return new RoomService(getRoomRepository());
+}
+
+/**
+ * Test/dev helper. Do not call from normal request handlers.
+ */
+export function resetRoomRuntimeForTests() {
+  runtime.__horizonRoomRepository = undefined;
+  runtime.__horizonRoomDatabase = undefined;
 }
