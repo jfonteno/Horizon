@@ -36,6 +36,7 @@ import {
   loadGame,
   marketExchange,
   mapLibrary,
+  mapIds,
   moveCarriers,
   orderLabel,
   formatPurchaseCost,
@@ -50,9 +51,11 @@ import {
   totalCombatUnits,
 } from "../game";
 import { botProfiles, getBotProfile } from "../bots";
-import { explorationIcon, tileAssets, type ShipIconType } from "../game/themes/assets";
+import { explorationIcon, tileAssetFor, type ShipIconType } from "../game/themes/assets";
+import { loadInstalledContent } from "./lib/content-client";
 import type {
   CommandMode as Mode,
+  ContentCatalog,
   FactionId,
   GameState as Game,
   HexKind as Kind,
@@ -92,7 +95,6 @@ type MapOrderAction =
   | "hold"
   | "establish"
   | "prospect"
-  | "forwardScan"
   | "longRangeSurvey";
 
 function createMapOrderId(kind: string) {
@@ -103,6 +105,9 @@ export default function Home() {
   const [started, setStarted] = useState(false),
     [count, setCount] = useState(6),
     [chosen, setChosen] = useState<FactionId[]>(factionIds),
+    [selectedMapId, setSelectedMapId] = useState("shattered-reach"),
+    [contentCatalog, setContentCatalog] = useState<ContentCatalog | null>(null),
+    [contentError, setContentError] = useState(""),
     [theme, setTheme] = useState<ThemeId>("horizon-base"),
     [seatControllers, setSeatControllers] = useState<string[]>(Array(6).fill("human")),
     [simulationPaused, setSimulationPaused] = useState(false),
@@ -126,12 +131,24 @@ export default function Home() {
     } | null>(null);
   // Loading a device-local playtest is intentionally a one-time hydration step.
   useEffect(() => {
-    const saved = loadGame();
-    if (saved) {
-      setGame(saved);
-      setTheme(saved.themeId);
-      setStarted(true);
-    }
+    let cancelled = false;
+    void loadInstalledContent()
+      .then((catalog) => {
+        if (cancelled) return;
+        setContentCatalog(catalog);
+        const saved = loadGame();
+        if (saved) {
+          if (!mapLibrary[saved.mapId] || saved.players.some((player) => !factionLibrary[player.faction])) {
+            setContentError("A saved game requires a content pack that is not installed.");
+            return;
+          }
+          setGame(saved);
+          setTheme(saved.themeId);
+          setStarted(true);
+        }
+      })
+      .catch((error) => !cancelled && setContentError(error instanceof Error ? error.message : "Content catalog failed to load."));
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => {
     if (game) saveGame(game);
@@ -180,6 +197,7 @@ export default function Home() {
       advanceBotAutomation();
     }, game.spectatorMode ? simulationSpeed : shouldResolve ? 700 : 450);
     return () => window.clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.active, game?.turn, game?.orderProtocol.phase, game?.orderProtocol.submissions.length, game?.result, game?.spectatorMode, simulationPaused, simulationSpeed]);
   useEffect(() => {
     setMapUnit(null);
@@ -201,7 +219,7 @@ export default function Home() {
   const configuredControllers = () => seatControllers.slice(0, count).map<PlayerController>((id) =>
     id === "human" ? { kind: "human" } : { kind: "bot", profileId: id },
   );
-  const map = mapLibrary[game?.mapId || "shattered-reach"],
+  const map = mapLibrary[game?.mapId || selectedMapId] || mapLibrary["shattered-reach"],
     p = game?.players[game.active],
     selected = game?.hexes.find((h) => h.id === game.selected),
     goal = (game?.players.length || count) * 3;
@@ -224,8 +242,7 @@ export default function Home() {
   function orderBelongsToUnit(order: SecretOrder, unit: MapUnitSelection) {
     const key = mapUnitKey(unit);
     if (order.kind === "hold") return order.id.startsWith(`map-hold-${key}--`);
-    if (unit.kind === "explorer")
-      return order.kind === "explorerMove" || order.kind === "forwardScan";
+    if (unit.kind === "explorer") return order.kind === "explorerMove";
     if (unit.kind === "colony")
       return order.kind === "colonyMove" || order.kind === "establish";
     if (unit.kind === "carrier")
@@ -280,7 +297,7 @@ export default function Home() {
       if (vessel?.type !== "surveyor" || vessel.readyTurn > game.turn || p.surveyUsedTurn === game.turn)
         return [] as string[];
       return game.hexes
-        .filter((hex) => !hex.revealed && hex.kind !== "rift")
+        .filter((hex) => !hex.revealed && hex.kind !== "rift" && !p.privateSurveys.some((survey) => survey.hexId === hex.id))
         .map((hex) => hex.id);
     }
     if (unit.kind === "carrier") {
@@ -294,14 +311,6 @@ export default function Home() {
         return [] as string[];
     }
     const neighbors = getNeighbors(unit.hexId, map);
-    if (action === "forwardScan") {
-      if (p.faction !== "farbound" || p.forwardScanUsedTurn === game.turn)
-        return [] as string[];
-      return neighbors.filter((id) => {
-        const hex = game.hexes.find((candidate) => candidate.id === id);
-        return hex && !hex.revealed && hex.kind !== "rift";
-      });
-    }
     if (action !== "move") return [] as string[];
     return neighbors.filter((id) => {
       const hex = game.hexes.find((candidate) => candidate.id === id);
@@ -394,6 +403,7 @@ export default function Home() {
     setMapZoom(1);
     const timer = window.setTimeout(centerSelected, 50);
     return () => window.clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, game?.mapId, game?.active]);
 
   function clickHex(id: string) {
@@ -425,8 +435,6 @@ export default function Home() {
         order = { id: `map-carrier-${stamp}`, kind: "carrierMove", carrierIds: [mapUnit.id], destination: id };
       else if (mapIntent === "move" && mapUnit.kind === "civilian")
         order = { id: `map-civilian-${stamp}`, kind: "civilianMove", unitId: mapUnit.id, destination: id };
-      else if (mapIntent === "forwardScan")
-        order = { id: `map-scan-${stamp}`, kind: "forwardScan", hexId: id };
       else if (mapIntent === "longRangeSurvey" && mapUnit.kind === "civilian")
         order = { id: `map-survey-${stamp}`, kind: "longRangeSurvey", unitId: mapUnit.id, hexId: id };
       else if (mapIntent === "establish")
@@ -609,7 +617,7 @@ export default function Home() {
         <div className="stars" />
         <section className="setup-card">
           <img src="/horizon-logo.png" alt="Horizon" className="logo" />
-          <p className="kicker">SHATTERED REACH PLAYTEST // VERSION 0.13.0</p>
+          <p className="kicker">SHATTERED REACH PLAYTEST // VERSION 0.17.2</p>
           <h1>Command the fleets of a broken system.</h1>
           <p className="lede">
             A deterministic strategy playtest with secret simultaneous Orders,
@@ -632,6 +640,16 @@ export default function Home() {
               </div>
             </div>
             <div>
+              <label>Map package</label>
+              <div className="segmented">
+                {mapIds.map((id) => (
+                  <button key={id} className={selectedMapId === id ? "active" : ""} onClick={() => setSelectedMapId(id)}>
+                    {mapLibrary[id].name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
               <label>Visual package</label>
               <div className="segmented">
                 {themeIds.map((id) => (
@@ -646,8 +664,8 @@ export default function Home() {
               </div>
             </div>
             <p>
-              Worlds reshuffle each game. Routes, regions, and chokepoints
-              remain.
+              Worlds and faction home assignments reshuffle each game. Routes,
+              regions, chokepoints, and legal starting hexes remain.
             </p>
           </div>
           <div className="faction-grid">
@@ -662,6 +680,7 @@ export default function Home() {
                     setChosen(n);
                   }}
                 >
+                  {factionLibrary[id].logo && <img className="faction-choice-logo" src={factionLibrary[id].logo} alt="" />}
                   <span>Seat {i + 1}</span>
                   <strong>{factionLibrary[id].name}</strong>
                   <small>{factionLibrary[id].role}</small>
@@ -676,7 +695,7 @@ export default function Home() {
           <button
             className="primary launch"
             onClick={() => {
-              setGame(createGame(count, chosen, "shattered-reach", theme, undefined, configuredControllers()));
+              setGame(createGame(count, chosen, selectedMapId, theme, undefined, configuredControllers()));
               setStarted(true);
             }}
           >
@@ -697,7 +716,7 @@ export default function Home() {
           ><span>WATCH ALL SIX FACTIONS</span><b>Run spectator simulation</b><small>Meta Analyst controls every civilization. Pause, step, or change speed at any time.</small></button>
           <RoomSetup
             gameFactory={() =>
-              createGame(count, chosen, "shattered-reach", theme, undefined, configuredControllers())
+              createGame(count, chosen, selectedMapId, theme, undefined, configuredControllers())
             }
             startHost={(session) => {
               setGame(session.game);
@@ -706,10 +725,9 @@ export default function Home() {
             }}
             openRemote={setRemoteRoom}
           />
-          <small className="fineprint">
-            Progress saves automatically. Version 0.13.0 migrates earlier
-            playtest saves.
-          </small>
+          {contentCatalog && contentCatalog.packs.length > 0 && <small className="fineprint">CONTENT PACKS // {contentCatalog.packs.map((pack) => `${pack.name} ${pack.version}`).join(" · ")}</small>}
+          {(contentError || contentCatalog?.issues.length) ? <small className="fineprint room-error">{contentError || `${contentCatalog!.issues.length} content pack(s) were rejected. Check server logs.`}</small> : null}
+          <small className="fineprint">Progress saves automatically. Version 0.17.2 remains compatible with earlier 0.17 playtest saves.</small>
         </section>
       </main>
     );
@@ -1117,7 +1135,6 @@ export default function Home() {
                 <div className="map-order-actions" aria-label="Vessel actions">
                   <button className={mapIntent === "move" ? "active" : ""} onClick={() => chooseMapAction("move")}>Move</button>
                   {mapUnit.kind === "colony" && <button className={mapIntent === "establish" ? "active" : ""} onClick={() => chooseMapAction("establish")}>Establish</button>}
-                  {mapUnit.kind === "explorer" && p!.faction === "farbound" && <button className={mapIntent === "forwardScan" ? "active" : ""} onClick={() => chooseMapAction("forwardScan")}>Forward Scan</button>}
                   {selectedMapCivilian?.type === "prospector" && <button className={mapIntent === "prospect" ? "active" : ""} onClick={() => chooseMapAction("prospect")}>Prospect</button>}
                   {selectedMapCivilian?.type === "surveyor" && <button className={mapIntent === "longRangeSurvey" ? "active" : ""} onClick={() => chooseMapAction("longRangeSurvey")}>Long-Range Survey</button>}
                   <button onClick={() => chooseMapAction("hold")}>Hold</button>
@@ -1208,7 +1225,7 @@ export default function Home() {
                       <span className="hex-inner">
                         <img
                           className="tile-art"
-                          src={visibleKind ? tileAssets[visibleKind] : tileAssets.unrevealed}
+                          src={tileAssetFor(map, visibleKind || "empty", Boolean(visibleKind))}
                           alt=""
                           aria-hidden="true"
                           draggable={false}

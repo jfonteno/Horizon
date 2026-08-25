@@ -10,6 +10,7 @@ import {
   moveCarriers,
   removeCapturedCenter,
   recruitCombatUnits,
+  resolveSimultaneousCarrierMoves,
 } from "../game/index";
 
 function fleetGame() {
@@ -113,4 +114,40 @@ test("capturing player chooses excess Centers after tier loss", () => {
   assert.equal(removeCapturedCenter(game, 0, 2).ok, true);
   assert.deepEqual(target.centers, ["currency", "research"]);
   assert.equal(game.pendingCenterLoss, undefined);
+});
+
+test("Defensive Pact forces combine deterministically to defend a Habitat", () => {
+  const game = createGame(3, ["varkesh", "helix", "foundry"], "shattered-reach", "horizon-base", 5052);
+  const attacker = game.carriers.find((carrier) => carrier.owner === 0)!;
+  const destination = adjacentOpen(game as ReturnType<typeof fleetGame>, attacker.hex);
+  const habitat = game.hexes.find((hex) => hex.id === destination)!;
+  habitat.owner = 1; habitat.tier = "Outpost"; habitat.combat = 1;
+  game.carriers.find((carrier) => carrier.owner === 1)!.hex = mapLibrary[game.mapId].starts[1];
+  const ally = game.carriers.find((carrier) => carrier.owner === 2)!;
+  ally.hex = destination; ally.cu = 2;
+  attacker.cu = 2; attacker.movesRemaining = 1;
+  game.agreements.push({ id: "defense", type: "defensive", parties: [1, 2], startedTurn: 1 });
+  resolveSimultaneousCarrierMoves(game, [{ playerId: 0, carrierIds: [attacker.id], destination }]);
+  assert.equal(game.carriers.some((carrier) => carrier.id === attacker.id), false);
+  assert.equal(habitat.owner, 1);
+  assert.equal(habitat.combat, 1);
+  assert.match(game.log[0], /coalition combat/i);
+});
+
+test("Alliance task forces combine and assign a captured Habitat deterministically", () => {
+  const game = createGame(3, ["varkesh", "helix", "foundry"], "shattered-reach", "horizon-base", 5053);
+  const first = game.carriers.find((carrier) => carrier.owner === 0)!;
+  const ally = game.carriers.find((carrier) => carrier.owner === 2)!;
+  const destination = adjacentOpen(game as ReturnType<typeof fleetGame>, first.hex);
+  ally.hex = first.hex; first.cu = 2; ally.cu = 2; first.movesRemaining = 1; ally.movesRemaining = 1;
+  const habitat = game.hexes.find((hex) => hex.id === destination)!;
+  habitat.owner = 1; habitat.tier = "Outpost"; habitat.combat = 1;
+  game.carriers.find((carrier) => carrier.owner === 1)!.hex = mapLibrary[game.mapId].starts[1];
+  game.agreements.push({ id: "alliance", type: "alliance", parties: [0, 2], startedTurn: 1 });
+  resolveSimultaneousCarrierMoves(game, [
+    { playerId: 0, carrierIds: [first.id], destination },
+    { playerId: 2, carrierIds: [ally.id], destination },
+  ]);
+  assert.equal(habitat.owner, 0);
+  assert.match(game.log[0], /coalition combat/i);
 });

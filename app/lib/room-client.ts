@@ -28,6 +28,8 @@ type RoomResumeRequest = {
   token: string;
 };
 
+type RoomSpectateRequest = { action: "spectate"; code: string };
+
 export class RoomClientError extends Error {
   constructor(
     message: string,
@@ -56,7 +58,7 @@ async function readPayload<T>(response: Response): Promise<T> {
 }
 
 async function roomRequest(
-  body: RoomCreateRequest | RoomJoinRequest | RoomResumeRequest,
+  body: RoomCreateRequest | RoomJoinRequest | RoomResumeRequest | RoomSpectateRequest,
 ): Promise<RoomSession> {
   const response = await fetch("/api/rooms", {
     method: "POST",
@@ -151,9 +153,14 @@ export async function resumeNetworkRoom(
   return session;
 }
 
+export async function spectateNetworkRoom(code: string): Promise<RoomSession> {
+  return roomRequest({ action: "spectate", code: normalizeCode(code) });
+}
+
 export async function sendRoomCommand(
   session: Pick<RoomSession, "code" | "token" | "revision">,
   command: RoomCommand,
+  commandId = globalThis.crypto?.randomUUID?.() || `command-${Date.now()}-${Math.random()}`,
 ): Promise<RoomSession> {
   const response = await fetch(
     `/api/rooms/${encodeURIComponent(normalizeCode(session.code))}/command`,
@@ -163,6 +170,7 @@ export async function sendRoomCommand(
       body: JSON.stringify({
         token: session.token,
         expectedRevision: session.revision,
+        commandId,
         command,
       }),
       cache: "no-store",
@@ -194,15 +202,23 @@ export async function pollRoom(
   return next.revision === knownRevision ? null : next;
 }
 
+export async function pollRoomSession(session: RoomSession): Promise<RoomSession | null> {
+  const next = session.role === "spectator"
+    ? await spectateNetworkRoom(session.code)
+    : await resumeNetworkRoom(session.code, session.token);
+  return next.revision === session.revision ? null : next;
+}
+
 export async function sendRoomCommandWithRefresh(
   session: RoomSession,
   command: RoomCommand,
 ): Promise<RoomSession> {
+  const commandId = globalThis.crypto?.randomUUID?.() || `command-${Date.now()}-${Math.random()}`;
   try {
-    return await sendRoomCommand(session, command);
+    return await sendRoomCommand(session, command, commandId);
   } catch (error) {
     if (!(error instanceof RoomClientError) || !error.staleRevision) throw error;
     const refreshed = await resumeNetworkRoom(session.code, session.token);
-    return sendRoomCommand(refreshed, command);
+    return sendRoomCommand(refreshed, command, commandId);
   }
 }

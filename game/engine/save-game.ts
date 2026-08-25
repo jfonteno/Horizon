@@ -1,4 +1,5 @@
 import type { CarrierState, GameState } from "../types";
+import { factionLibrary } from "../factions";
 import { emptyLegacyBreakdown, emptyLegacyMetrics } from "../rules/legacy";
 
 export const SAVE_KEY = "horizon-local-playtest";
@@ -36,8 +37,9 @@ export function loadGame(): GameState | null {
       });
     return {
       ...legacy,
-      schemaVersion: 13,
+      schemaVersion: 14,
       mapId: legacy.mapId || "shattered-reach",
+      contentPacks: legacy.contentPacks || [],
       themeId: legacy.themeId || "horizon-base",
       hexes: (schemaVersion < 3
         ? legacy.hexes.map((hex) =>
@@ -56,6 +58,7 @@ export function loadGame(): GameState | null {
           metrics = player.legacyMetrics || defaults;
         return {
           ...player,
+          rulesProfile: player.rulesProfile || factionLibrary[player.faction]?.rulesProfile,
           controller: player.controller || { kind: "human" },
           laborBonus: player.laborBonus || 0,
           disabled: schemaVersion < 3 ? false : player.disabled,
@@ -74,6 +77,7 @@ export function loadGame(): GameState | null {
           hiddenLegacy: player.hiddenLegacy || {},
           privateSurveys: player.privateSurveys || [],
           diplomacy: {
+            ...player.diplomacy,
             contacts: [],
             firstAgreementPartners: [],
             firstTradeAgreementUsed: false,
@@ -81,7 +85,6 @@ export function loadGame(): GameState | null {
             researchDiscountEras: [],
             technologyExportPartners: [],
             bonusInfluenceGained: 0,
-            ...player.diplomacy,
           },
         };
       }),

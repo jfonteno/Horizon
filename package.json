@@ -1,6 +1,6 @@
 {
   "name": "horizon-shattered-reach",
-  "version": "0.13.0",
+  "version": "0.17.2",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -9,11 +9,17 @@
     "install:ci": "bash scripts/install-ci.sh",
     "dev": "vite",
     "build": "bash scripts/build-verified.sh",
+    "build:self-hosted": "HORIZON_STANDALONE=1 npm run build",
     "start": "vinext start",
+    "start:self-hosted": "node --import tsx scripts/start-self-hosted.ts",
+    "backup:self-hosted": "bash scripts/backup-self-hosted.sh",
+    "restore:self-hosted": "bash scripts/restore-self-hosted.sh",
     "test": "HORIZON_STANDALONE=1 npm run build && node --import tsx --test tests/*.test.ts",
     "simulate:ai": "node --import tsx scripts/simulate-ai.ts",
     "validate:artifact": "bash scripts/validate-artifact.sh",
+    "validate:content": "node --import tsx scripts/validate-content.ts",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
+    "typecheck": "bash scripts/sites-env.sh -- tsc --noEmit --pretty false",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
     "package:release": "bash scripts/package-release.sh"
   },
@@ -21,9 +27,11 @@
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "tsx": "4.23.12"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "4.20260702.1",
     "@cloudflare/vite-plugin": "1.37.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",

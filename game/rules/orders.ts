@@ -1,4 +1,4 @@
-import { factionLibrary } from "../factions";
+import { factionLibrary, factionRules } from "../factions";
 import { getNeighbors } from "../engine/geometry";
 import { mapLibrary } from "../maps";
 import type { GameState, Resource, SecretOrder } from "../types";
@@ -6,7 +6,6 @@ import {
   buildCivilian,
   beginFactionTurn,
   civilianLibrary,
-  forwardScan,
   longRangeSurvey,
   moveCivilian,
   prospect,
@@ -53,6 +52,12 @@ export function beginSecretOrders(game: GameState) {
   return { ok: true, message: "Secret Orders Phase begun." };
 }
 
+function startingHex(game: GameState, playerId: number) {
+  return game.hexes.find(
+    (hex) => hex.kind === "home" && hex.originalOwner === playerId,
+  )?.id || game.players[playerId].explorer;
+}
+
 function duplicateVesselOrders(orders: SecretOrder[]) {
   const vessels: string[] = [];
   for (const order of orders) {
@@ -63,8 +68,7 @@ function duplicateVesselOrders(orders: SecretOrder[]) {
       order.kind === "longRangeSurvey"
     )
       vessels.push(order.unitId);
-    if (order.kind === "explorerMove" || order.kind === "forwardScan")
-      vessels.push("explorer");
+    if (order.kind === "explorerMove") vessels.push("explorer");
     if (order.kind === "colonyMove" || order.kind === "establish")
       vessels.push("colony");
   }
@@ -123,7 +127,7 @@ export function submitSecretOrders(
   if (next) {
     protocol.currentPlayer = next.id;
     game.active = next.id;
-    game.selected = mapLibrary[game.mapId].starts[next.id];
+    game.selected = startingHex(game, next.id);
     game.selectedCarrierIds = game.carriers
       .filter((carrier) => carrier.owner === next.id && carrier.hex === game.selected)
       .slice(0, 1)
@@ -136,12 +140,13 @@ export function submitSecretOrders(
   return { ok: true, message: "All Orders are sealed and ready to resolve." };
 }
 
-function resolveScans(game: GameState, orders: Array<{ playerId: number; order: SecretOrder }>) {
-  for (const { playerId, order } of orders) {
-    if (order.kind === "forwardScan") forwardScan(game, playerId, order.hexId);
+function resolveLongRangeSurveys(
+  game: GameState,
+  orders: Array<{ playerId: number; order: SecretOrder }>,
+) {
+  for (const { playerId, order } of orders)
     if (order.kind === "longRangeSurvey")
       longRangeSurvey(game, playerId, order.unitId, order.hexId);
-  }
 }
 
 function resolveCivilianMovement(
@@ -204,7 +209,7 @@ function resolveLocations(
     hex.owner = playerId;
     hex.tier = "Outpost";
     player.legacyMetrics.habitatsEstablished[game.era - 1]++;
-    if (player.faction === "farbound" && hex.surveyedBy?.includes(playerId)) {
+    if (factionRules(player) === "farbound" && hex.surveyedBy?.includes(playerId)) {
       player.resources.material++;
       player.resources.currency++;
       if (
@@ -230,7 +235,7 @@ function constructionCost(
     construction = order.construction;
   if (!habitat?.tier || habitat.owner !== playerId) return null;
   if (construction.type === "module")
-    return { material: 3, currency: 2, labor: player.faction === "foundry" ? 0 : 2 };
+    return { material: 3, currency: 2, labor: factionRules(player) === "foundry" ? 0 : 2 };
   if (construction.type === "upgrade")
     return habitat.tier === "Outpost"
       ? { material: 2, currency: 2, labor: 2 }
@@ -239,7 +244,7 @@ function constructionCost(
         : null;
   if (construction.type === "center") {
     if (construction.center === "defense") return { material: 2, currency: 1, labor: 1 };
-    if (player.faction === "helix" && construction.center === "research")
+    if (factionRules(player) === "helix" && construction.center === "research")
       return { material: 1, currency: 1, labor: 1 };
     return centerCosts[construction.center];
   }
@@ -408,7 +413,7 @@ export function resolveSecretOrders(game: GameState) {
   );
   const before = game.log.length;
   game.orderProtocol.phase = "resolved";
-  resolveScans(game, all);
+  resolveLongRangeSurveys(game, all);
   resolveSimultaneousCarrierMoves(
     game,
     all
@@ -444,7 +449,7 @@ export function resolveSecretOrders(game: GameState) {
       beginFactionTurn(game, player.id);
     }
     game.active = 0;
-    game.selected = mapLibrary[game.mapId].starts[0];
+    game.selected = startingHex(game, 0);
     game.orderProtocol = {
       phase: "orders",
       turn: game.turn,
@@ -468,8 +473,6 @@ export function orderLabel(order: SecretOrder) {
       return `Colony Ship to ${order.destination}`;
     case "civilianMove":
       return `Faction vessel to ${order.destination}`;
-    case "forwardScan":
-      return `Forward Scan ${order.hexId}`;
     case "longRangeSurvey":
       return `Long-Range Survey ${order.hexId}`;
     case "establish":

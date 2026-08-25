@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "frontier-example",
+  "name": "Frontier Example Pack",
+  "version": "1.0.0",
+  "horizonVersion": "0.17",
+  "description": "A reference pack demonstrating a drop-in map, faction, and visual assets.",
+  "maps": ["maps/outer-rim.json"],
+  "factions": ["factions/accord.json"]
+}

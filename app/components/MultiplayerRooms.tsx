@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import type { GameState, RoomIdentity, RoomSession } from "../../game";
+import { saveRoomIdentity } from "../lib/room-client";
 
 const ROOM_KEY = "horizon-room-identity-v1";
 
@@ -26,6 +27,7 @@ function remember(session: RoomSession) {
     revision: session.revision,
   };
   localStorage.setItem(ROOM_KEY, JSON.stringify(identity));
+  saveRoomIdentity(session);
   return identity;
 }
 
@@ -53,7 +55,11 @@ export function RoomSetup({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => setSaved(recalled()), []);
+  useEffect(() => {
+    setSaved(recalled());
+    const invited = new URLSearchParams(window.location.search).get("join");
+    if (invited) setCode(invited.toUpperCase().slice(0, 6));
+  }, []);
 
   const act = async (fn: () => Promise<RoomSession>) => {
     setBusy(true);
@@ -61,7 +67,8 @@ export function RoomSetup({
     try {
       const session = await fn();
       setSaved(remember(session));
-      if (session.role === "host") startHost(session);
+      if (session.summary.mode === "network") window.location.assign(`/room/${session.code}`);
+      else if (session.role === "host") startHost(session);
       else openRemote(session);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Room request failed.");
@@ -74,11 +81,11 @@ export function RoomSetup({
     <section className="room-setup">
       <div className="room-heading">
         <div>
-          <span>0.13.0 STRATEGIC MIND</span>
-          <h3>Server-backed playtest rooms</h3>
+          <span>0.17.2 MULTIPLAYER BETA</span>
+          <h3>Persistent online game rooms</h3>
         </div>
         <small>
-          Host a synchronized hot-seat game or claim a private read-only seat.
+          Ready a private seat, reconnect safely, command fleets, negotiate, or watch the public board.
         </small>
       </div>
       <div className="room-setup-grid">
@@ -94,6 +101,7 @@ export function RoomSetup({
                   action: "create",
                   game: gameFactory(),
                   displayName: name || "Host",
+                  mode: "network",
                 }),
               )
             }
@@ -149,21 +157,14 @@ export function RoomSetup({
           >
             Claim seat
           </button>
+          <button disabled={busy || code.length !== 6} onClick={() => window.location.assign(`/room/${code}?spectate=1`)}>Watch room</button>
         </div>
       </div>
       {saved && (
         <button
           className="room-resume"
           disabled={busy}
-          onClick={() =>
-            act(() =>
-              roomRequest({
-                action: "resume",
-                code: saved.code,
-                token: saved.token,
-              }),
-            )
-          }
+          onClick={() => window.location.assign(`/room/${saved.code}`)}
         >
           Resume saved room {saved.code}
         </button>
@@ -265,8 +266,8 @@ export function RoomConsole({ game }: { game: GameState }) {
       )}
       {message && <small className="room-message">{message}</small>}
       <small className="muted">
-        Live remote commands and simultaneous secret orders remain a later
-        multiplayer milestone.
+        Network rooms support server-authoritative Military, Diplomacy, and
+        simultaneous secret Orders.
       </small>
     </div>
   );
@@ -355,8 +356,8 @@ export function RemoteRoomView({
           <button onClick={close}>Return to launch screen</button>
         </div>
         <small className="muted">
-          This seat is intentionally read-only in 0.13.0. The authoritative host
-          publishes the current hot-seat state.
+          Legacy read-only room view. Network rooms open on the shared
+          interactive board.
         </small>
       </section>
     </main>

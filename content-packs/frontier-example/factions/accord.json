@@ -1,0 +1,26 @@
+{
+  "id": "accord",
+  "name": "The Accord",
+  "role": "Coalition",
+  "color": "#4fd1c5",
+  "blurb": "Frontier coordinators who begin with balanced reserves and an established diplomatic doctrine.",
+  "homeProduction": "influence",
+  "objectives": [
+    "Common Cause: maintain two formal agreements",
+    "Shared Horizon: contribute in three different Eras",
+    "Frontier Council: control three Habitats and three Center types"
+  ],
+  "rulesProfile": "aurelians",
+  "starting": {
+    "resources": {
+      "material": 1,
+      "currency": 1,
+      "influence": 2
+    },
+    "technology": {
+      "Policy": 2
+    },
+    "homeCenter": "influence"
+  },
+  "logo": "assets/accord-mark.svg"
+}

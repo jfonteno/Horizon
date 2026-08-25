@@ -7,6 +7,7 @@ import {
   economicSalvage,
   evaluateLegacy,
   longRangeSurvey,
+  negotiationSurvey,
   prospect,
   surveyExchange,
 } from "../game/index";
@@ -22,9 +23,22 @@ test("Foundry constructs a Prospector and prospects an eligible hex once",()=>{
 
 test("Farbound surveys remain private and can be sold without public reveal",()=>{
   const game=createGame(2,["farbound","helix"],"shattered-reach","horizon-base",7002),p=game.players[0],target=game.hexes.find(h=>!h.revealed&&h.kind!=="rift")!;
-  game.civilianUnits.push({id:"s",owner:0,type:"surveyor",hex:p.explorer,readyTurn:1,movesRemaining:1});
-  assert.equal(longRangeSurvey(game,0,"s",target.id).ok,true);game.players[1].resources.currency=5;
+  assert.equal(negotiationSurvey(game,0,target.id).ok,true);assert.equal(negotiationSurvey(game,0,target.id).ok,false);game.players[1].resources.currency=5;
   assert.equal(target.revealed,false);assert.equal(surveyExchange(game,0,1,target.id,2).ok,false);p.tech.Policy=2;assert.equal(surveyExchange(game,0,1,target.id,2).ok,true);assert.equal(game.players[1].resources.currency,3);assert.equal(target.revealed,false);
+});
+
+test("Farbound survey intelligence expires as a tradable commodity after its Turn",()=>{
+  const game=createGame(2,["farbound","helix"],"shattered-reach","horizon-base",7007),p=game.players[0],target=game.hexes.find(h=>!h.revealed&&h.kind!=="rift")!;
+  p.tech.Policy=2;game.players[1].resources.currency=5;
+  assert.equal(negotiationSurvey(game,0,target.id).ok,true);game.turn=2;
+  assert.equal(surveyExchange(game,0,1,target.id,1).ok,false);
+});
+
+test("Farbound Long-Range Survey remains an Orders ability and its archive persists",()=>{
+  const game=createGame(2,["farbound","helix"],"shattered-reach","horizon-base",7008),p=game.players[0],target=game.hexes.find(h=>!h.revealed&&h.kind!=="rift")!;
+  game.civilianUnits.push({id:"s",owner:0,type:"surveyor",hex:p.explorer,readyTurn:1,movesRemaining:1});
+  assert.equal(longRangeSurvey(game,0,"s",target.id).ok,true);game.turn=2;p.tech.Policy=2;game.players[1].resources.currency=2;
+  assert.equal(surveyExchange(game,0,1,target.id,1).ok,true);
 });
 
 test("Meridian Brokerage exchanges resources and pays once per pair each Turn",()=>{

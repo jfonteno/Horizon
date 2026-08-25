@@ -18,13 +18,21 @@ import { marketExchange } from "../rules/economy";
 import {
   brokerTrade,
   economicSalvage,
+  negotiationSurvey,
   surveyExchange,
 } from "../rules/faction-operations";
-import { removeCapturedCenter } from "../rules/fleet";
-import { selectHiddenLegacy } from "../rules/legacy";
+import { removeCapturedCenter, transferCombatUnit } from "../rules/fleet";
+import {
+  drawHiddenChoices,
+  manualClaimCivilization,
+  manualClaimUniversal,
+  selectHiddenLegacy,
+  setHiddenCompleted,
+} from "../rules/legacy";
+import { getBotProfile } from "../../bots";
 import { resolveSecretOrders, submitSecretOrders } from "../rules/orders";
 import { runPendingBotSeats } from "./bot-seats";
-import type { RoomCommand, RoomCommandResult } from "./command";
+import { validateRoomCommand, type RoomCommand, type RoomCommandResult } from "./command";
 import { RoomService } from "./rooms";
 import type { RoomRepository, RoomSession, StoredRoom } from "./types";
 
@@ -32,6 +40,7 @@ export type ExecuteRoomCommandInput = {
   code: string;
   token: string;
   expectedRevision: number;
+  commandId?: string;
   command: RoomCommand;
 };
 
@@ -116,12 +125,45 @@ function executeOnGame(
   playerId: number,
   command: RoomCommand,
 ): RoomCommandResult {
+  if (game.pendingCenterLoss && command.kind !== "removeCapturedCenter")
+    return {
+      ok: false,
+      message: `${game.players[game.pendingCenterLoss.playerId].name} must finish captured Center losses before further actions.`,
+    };
   switch (command.kind) {
+    case "setReady":
+    case "startGame":
+    case "pauseGame":
+    case "resumeGame":
+    case "endGame":
+    case "convertSeatToBot":
+      return { ok: false, message: "That command changes the room rather than the game." };
+    case "drawHidden":
+      drawHiddenChoices(game, playerId, game.era);
+      return { ok: true, message: "Three private Hidden Legacy objectives drawn." };
+
     case "selectHidden": {
       const ok = selectHiddenLegacy(game, playerId, command.cardId);
       return ok
         ? { ok: true, message: "Hidden Legacy objective selected." }
         : { ok: false, message: "That Hidden Legacy objective cannot be selected." };
+    }
+
+    case "setHiddenCompleted": {
+      const ok = setHiddenCompleted(game, playerId, command.completed);
+      return ok
+        ? { ok: true, message: command.completed ? "Hidden Legacy marked complete." : "Hidden Legacy completion removed." }
+        : { ok: false, message: "That Hidden Legacy objective cannot be updated." };
+    }
+
+    case "claimUniversal": {
+      const ok = manualClaimUniversal(game, playerId, command.objectiveId);
+      return ok ? { ok: true, message: "Universal Legacy claimed." } : { ok: false, message: "That Universal Legacy cannot be claimed." };
+    }
+
+    case "claimCivilization": {
+      const ok = manualClaimCivilization(game, playerId, command.objectiveId);
+      return ok ? { ok: true, message: "Civilization Legacy completed." } : { ok: false, message: "That Civilization Legacy cannot be completed." };
     }
 
     case "submitOrders":
@@ -203,6 +245,17 @@ function executeOnGame(
     case "economicSalvage":
       return economicSalvage(game, playerId);
 
+    case "negotiationSurvey":
+      return negotiationSurvey(game, playerId, command.hexId);
+
+    case "transferCombatUnit":
+      if (
+        game.orderProtocol.phase !== "orders" ||
+        game.orderProtocol.submissions.some((submission) => submission.playerId === playerId)
+      )
+        return { ok: false, message: "CU transfers must be completed before this civilization seals its Orders." };
+      return transferCombatUnit(game, playerId, command.carrierId, command.direction, command.amount);
+
     case "surveyExchange": {
       assertOtherPlayer(game, playerId, command.buyerId);
       return surveyExchange(
@@ -234,6 +287,90 @@ function executeOnGame(
   }
 }
 
+const roomCommandKinds = new Set([
+  "setReady", "startGame", "pauseGame", "resumeGame", "endGame", "convertSeatToBot",
+]);
+
+function isRoomCommand(command: RoomCommand) {
+  return roomCommandKinds.has(command.kind);
+}
+
+function appendRoomEvent(room: StoredRoom, playerId: number, command: RoomCommand, message: string) {
+  const diplomacy = ["proposeTrade", "proposeAgreement", "proposeTechnology", "respondProposal", "cancelProposal", "withdrawAgreement", "breakAgreement", "negotiationSurvey", "surveyExchange", "brokerTrade"].includes(command.kind);
+  const publicMessage = diplomacy
+    ? command.kind.startsWith("propose")
+      ? `${room.game.players[playerId].name} submitted a private diplomatic proposal.`
+      : `${room.game.players[playerId].name} updated a private diplomatic matter.`
+    : message;
+  room.events.push({
+    id: `event-${room.revision}-${playerId}-${command.kind}`,
+    at: room.updatedAt,
+    revision: room.revision,
+    type: command.kind === "submitOrders" ? "orders" : diplomacy ? "diplomacy" : isRoomCommand(command) ? "phase" : "system",
+    playerId,
+    message: publicMessage,
+  });
+  room.events = room.events.slice(-200);
+}
+
+async function executeOnRoom(room: StoredRoom, playerId: number, token: string, command: RoomCommand): Promise<RoomCommandResult> {
+  const host = (await hashToken(token)) === room.hostTokenHash;
+  const seat = room.seats[playerId];
+  switch (command.kind) {
+    case "setReady":
+      if (room.status !== "lobby") return { ok: false, message: "Readiness can only change in the lobby." };
+      seat.ready = command.ready;
+      return { ok: true, message: `${seat.displayName || room.game.players[playerId].name} is ${command.ready ? "ready" : "not ready"}.` };
+    case "startGame": {
+      if (!host) return { ok: false, message: "Only the host may start the game." };
+      if (room.status !== "lobby") return { ok: false, message: "This room is not waiting in the lobby." };
+      const missing = room.seats.filter((candidate) => candidate.controller.kind === "human" && (!candidate.tokenHash || !candidate.ready));
+      if (missing.length) return { ok: false, message: `${missing.length} human seat${missing.length === 1 ? " is" : "s are"} not claimed and ready.` };
+      room.status = "active";
+      return { ok: true, message: "All civilizations are ready. The game has begun." };
+    }
+    case "pauseGame":
+      if (!host) return { ok: false, message: "Only the host may pause the game." };
+      if (room.status !== "active") return { ok: false, message: "Only an active game can be paused." };
+      room.status = "paused";
+      return { ok: true, message: "The host paused the game." };
+    case "resumeGame":
+      if (!host) return { ok: false, message: "Only the host may resume the game." };
+      if (room.status !== "paused") return { ok: false, message: "This game is not paused." };
+      room.status = "active";
+      return { ok: true, message: "The host resumed the game." };
+    case "endGame": {
+      if (!host) return { ok: false, message: "Only the host may end the game." };
+      if (room.status === "complete") return { ok: false, message: "This game is already complete." };
+      const highest = Math.max(...room.game.players.map((player) => player.lp));
+      room.game.result = {
+        gateSucceeded: room.game.gate >= room.game.players.length * 3,
+        winnerIds: room.game.players.filter((player) => player.lp === highest).map((player) => player.id),
+        reason: "The host ended the network playtest. Final standings reflect the latest completed state.",
+        finalizedTurn: room.game.turn,
+      };
+      room.status = "complete";
+      return { ok: true, message: "The host ended and archived the game." };
+    }
+    case "convertSeatToBot": {
+      if (!host) return { ok: false, message: "Only the host may assign a bot takeover." };
+      if (room.status !== "lobby" && room.status !== "paused") return { ok: false, message: "Bot takeover requires the lobby or a paused game." };
+      if (command.playerId === playerId) return { ok: false, message: "The host seat cannot be converted to a bot." };
+      const target = room.seats[command.playerId];
+      if (!target) return { ok: false, message: "That seat does not exist." };
+      if (!getBotProfile(command.profileId)) return { ok: false, message: "That bot profile is not installed." };
+      target.controller = { kind: "bot", profileId: command.profileId };
+      target.displayName = getBotProfile(command.profileId)!.name;
+      target.tokenHash = null;
+      target.ready = true;
+      room.game.players[command.playerId].controller = { kind: "bot", profileId: command.profileId };
+      return { ok: true, message: `${room.game.players[command.playerId].name} is now controlled by ${target.displayName}.` };
+    }
+    default:
+      return { ok: false, message: "That is not a room lifecycle command." };
+  }
+}
+
 /**
  * Apply one authenticated network command to the canonical room state.
  *
@@ -249,21 +386,41 @@ export async function executeRoomCommand(
   const code = normalizeCode(input.code);
   const room = await repository.get(code);
   if (!room) throw new Error("No Horizon room uses that invitation code.");
-  if (room.status === "complete" || room.game.result)
-    return { ok: false, message: "That Horizon game is complete." };
-  if (room.revision !== input.expectedRevision)
-    throw new Error(
-      `Room changed from revision ${input.expectedRevision} to ${room.revision}. Sync before acting again.`,
-    );
-
   const playerId = await authenticateHuman(room, input.token);
+  const command = validateRoomCommand(input.command);
+  const commandId = input.commandId?.trim() || `legacy-${crypto.getRandomValues(new Uint32Array(2)).join("-")}`;
+  if (commandId.length > 120) throw new Error("commandId must be no more than 120 characters.");
+  const receipt = room.commandReceipts.find((candidate) => candidate.commandId === commandId && candidate.playerId === playerId);
+  if (receipt) {
+    const session = await new RoomService(repository).resume(code, input.token);
+    return { ok: true, message: receipt.message, session };
+  }
+  if (room.revision !== input.expectedRevision)
+    throw new Error(`Room changed from revision ${input.expectedRevision} to ${room.revision}. Sync before acting again.`);
+
+  if (isRoomCommand(command)) {
+    const action = await executeOnRoom(room, playerId, input.token, command);
+    if (!action.ok) return action;
+    room.revision++;
+    room.updatedAt = new Date().toISOString();
+    appendRoomEvent(room, playerId, command, action.message);
+    room.commandReceipts.push({ commandId, playerId, revision: room.revision, message: action.message });
+    room.commandReceipts = room.commandReceipts.slice(-300);
+    if (!(await repository.compareAndSwap(room, input.expectedRevision)))
+      throw new Error("The room changed while this command was being processed. Sync and retry.");
+    return { ok: true, message: action.message, session: await new RoomService(repository).resume(code, input.token) };
+  }
+
+  if (room.status === "complete" || room.game.result) return { ok: false, message: "That Horizon game is complete." };
+  if (room.status === "lobby") return { ok: false, message: "The host must start the game before commands are accepted." };
+  if (room.status === "paused") return { ok: false, message: "The host paused this game." };
   const game = structuredClone(room.game);
-  const action = executeOnGame(game, playerId, input.command);
+  const action = executeOnGame(game, playerId, command);
   if (!action.ok) return action;
 
   const botMessages: string[] = [];
   if (
-    input.command.kind === "submitOrders" &&
+    command.kind === "submitOrders" &&
     options.runBotsAfterHumanOrders !== false &&
     game.orderProtocol.phase === "orders"
   ) {
@@ -278,19 +435,24 @@ export async function executeRoomCommand(
     const resolution = resolveSecretOrders(game);
     if (!resolution.ok)
       throw new Error(`Automatic Turn resolution failed: ${resolution.message}`);
+    while (
+      game.pendingCenterLoss &&
+      game.players[game.pendingCenterLoss.playerId].controller.kind === "bot"
+    ) {
+      const result = removeCapturedCenter(game, game.pendingCenterLoss.playerId, 0);
+      if (!result.ok) throw new Error(`Bot capture bookkeeping failed: ${result.message}`);
+    }
   }
-
-  // Re-check just before writing. RoomRepository does not yet provide an atomic
-  // compare-and-swap, so this narrows (but cannot entirely eliminate) a race.
-  const latest = await repository.get(code);
-  if (!latest || latest.revision !== input.expectedRevision)
-    throw new Error("The room changed while this command was being processed. Sync and retry.");
 
   room.game = game;
   room.revision++;
   room.status = game.result ? "complete" : "active";
   room.updatedAt = new Date().toISOString();
-  await repository.put(room);
+  appendRoomEvent(room, playerId, command, action.message);
+  room.commandReceipts.push({ commandId, playerId, revision: room.revision, message: action.message });
+  room.commandReceipts = room.commandReceipts.slice(-300);
+  if (!(await repository.compareAndSwap(room, input.expectedRevision)))
+    throw new Error("The room changed while this command was being processed. Sync and retry.");
 
   const session = await new RoomService(repository).resume(code, input.token);
   return {

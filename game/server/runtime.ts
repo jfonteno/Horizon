@@ -14,6 +14,12 @@ export function setRoomDatabase(database?: D1Database) {
   }
 }
 
+/** Inject a platform-specific repository before the production server starts. */
+export function setRoomRepository(repository: RoomRepository) {
+  runtime.__horizonRoomDatabase = undefined;
+  runtime.__horizonRoomRepository = repository;
+}
+
 /**
  * All room API routes and command handlers should obtain the repository through
  * this function so they share the same persistence backend.

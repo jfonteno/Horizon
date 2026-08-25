@@ -1,0 +1,31 @@
+{
+  "id": "outer-rim",
+  "name": "Outer Rim",
+  "description": "A compact six-seat frontier with a fractured center and contested cross-system routes.",
+  "rows": 7,
+  "columns": 7,
+  "starts": ["0-3", "1-1", "1-5", "5-1", "5-5", "6-3"],
+  "regions": {
+    "0-3": "Crown Passage",
+    "1-1": "Dawn Verge",
+    "1-5": "Ember Verge",
+    "5-1": "Long Night",
+    "5-5": "Glass March",
+    "6-3": "Deep Anchorage"
+  },
+  "blocked": ["0-0", "0-6", "2-3", "3-2", "3-3", "3-4", "4-3", "6-0", "6-6"],
+  "tilePool": [
+    "material", "material", "material", "material",
+    "currency", "currency", "currency", "currency",
+    "research", "research", "research", "research",
+    "influence", "influence", "influence", "influence",
+    "labor", "labor", "labor", "labor",
+    "barren", "barren", "barren", "barren", "barren", "barren",
+    "anomaly", "anomaly", "anomaly", "hazard", "hazard"
+  ],
+  "minPlayers": 4,
+  "maxPlayers": 6,
+  "tileAssets": {
+    "unrevealed": "assets/frontier-unrevealed.svg"
+  }
+}

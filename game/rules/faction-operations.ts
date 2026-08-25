@@ -1,6 +1,7 @@
 import { getNeighbors } from "../engine/geometry";
+import { factionRules } from "../factions";
 import { mapLibrary } from "../maps";
-import type { CivilianUnitType, GameState, Resource, TradeBundle } from "../types";
+import type { CivilianUnitType, GameState, TradableResource, TradeBundle } from "../types";
 import { canPay, spend } from "./economy";
 import { claimHabitatConstruction } from "./fleet";
 
@@ -34,7 +35,7 @@ export const civilianLibrary: Record<
     faction: "farbound",
     move: 1,
     cost: { material: 3, currency: 2, labor: 1 },
-    special: "Privately survey any unrevealed hex once per Turn.",
+    special: "Privately survey any unrevealed hex once per Turn during Orders.",
   },
 };
 
@@ -49,11 +50,11 @@ export function availableCivilianType(
 ): CivilianUnitType | undefined {
   const p = game.players[playerId];
   if (p.tech.Exploration < 2) return;
-  return p.faction === "foundry"
+  return factionRules(p) === "foundry"
     ? "prospector"
-    : p.faction === "aurelians"
+    : factionRules(p) === "aurelians"
       ? "envoy"
-      : p.faction === "farbound"
+      : factionRules(p) === "farbound"
         ? "surveyor"
         : undefined;
 }
@@ -68,7 +69,7 @@ export function buildCivilian(
     d = civilianLibrary[type];
   if (!h?.tier || h.owner !== playerId)
     return { ok: false, message: "Select one of your Habitats." };
-  if (p.faction !== d.faction || p.tech.Exploration < 2)
+  if (factionRules(p) !== d.faction || p.tech.Exploration < 2)
     return {
       ok: false,
       message: `${d.name} requires its matching faction at Exploration II.`,
@@ -135,7 +136,7 @@ export function prospect(
   const p = game.players[playerId],
     u = game.civilianUnits.find((x) => x.id === unitIdValue),
     h = u && game.hexes.find((x) => x.id === u.hex);
-  if (p.faction !== "foundry" || u?.type !== "prospector")
+  if (factionRules(p) !== "foundry" || u?.type !== "prospector")
     return { ok: false, message: "Select a Foundry Prospector." };
   if (u.usedTurn === game.turn)
     return { ok: false, message: "That Prospector already acted this Turn." };
@@ -170,40 +171,51 @@ export function prospect(
   game.log.unshift(`${p.name} Prospected ${h.id} and gained 1 Material.`);
   return { ok: true, message: "Prospecting complete. Gained 1 Material." };
 }
-function recordSurvey(game: GameState, playerId: number, hexId: string) {
+function recordSurvey(game: GameState, playerId: number, hexId: string, tradableTurn?: number) {
   const p = game.players[playerId],
     h = game.hexes.find((x) => x.id === hexId);
-  if (!h || h.revealed || h.kind === "rift") return false;
-  if (!p.privateSurveys.some((s) => s.hexId === hexId))
-    p.privateSurveys.push({
-      hexId,
-      kind: h.kind,
-      surveyedTurn: game.turn,
-      soldTo: [],
-    });
+  if (
+    !h ||
+    h.revealed ||
+    h.kind === "rift" ||
+    p.privateSurveys.some((s) => s.hexId === hexId)
+  ) return false;
+  p.privateSurveys.push({
+    hexId,
+    kind: h.kind,
+    surveyedTurn: game.turn,
+    tradableTurn,
+    soldTo: [],
+  });
   h.surveyedBy ||= [];
   if (!h.surveyedBy.includes(playerId)) h.surveyedBy.push(playerId);
   return true;
 }
-export function forwardScan(game: GameState, playerId: number, hexId: string) {
+export function negotiationSurvey(game: GameState, playerId: number, hexId: string) {
   const p = game.players[playerId];
-  if (p.faction !== "farbound")
-    return { ok: false, message: "Forward Scanning is a Farbound ability." };
-  if (p.forwardScanUsedTurn === game.turn)
-    return {
-      ok: false,
-      message: "Forward Scanning is limited to once per Turn.",
-    };
+  if (factionRules(p) !== "farbound")
+    return { ok: false, message: "Negotiation Survey is a Farbound ability." };
   if (
-    !getNeighbors(p.explorer, mapLibrary[game.mapId]).includes(hexId) ||
-    !recordSurvey(game, playerId, hexId)
+    game.orderProtocol.phase !== "orders" ||
+    game.orderProtocol.submissions.some((submission) => submission.playerId === playerId)
   )
     return {
       ok: false,
-      message: "Choose an unrevealed hex adjacent to the Exploration vessel.",
+      message: "Survey intelligence must be gathered before this civilization seals its Orders.",
     };
-  p.forwardScanUsedTurn = game.turn;
-  return { ok: true, message: `Private survey recorded for ${hexId}.` };
+  if (p.negotiationSurveyUsedTurn === game.turn)
+    return {
+      ok: false,
+      message: "The Farbound already gathered survey intelligence this Turn.",
+    };
+  if (!recordSurvey(game, playerId, hexId, game.turn))
+    return { ok: false, message: "Choose an unrevealed hex not already in the survey archive." };
+  p.negotiationSurveyUsedTurn = game.turn;
+  return {
+    ok: true,
+    message: `Negotiation survey recorded for ${hexId}. This intelligence may be traded this Turn.`,
+    privateDetail: `${hexId}: ${game.hexes.find((hex) => hex.id === hexId)!.kind}`,
+  };
 }
 export function longRangeSurvey(
   game: GameState,
@@ -213,7 +225,7 @@ export function longRangeSurvey(
 ) {
   const p = game.players[playerId],
     u = game.civilianUnits.find((x) => x.id === unitIdValue);
-  if (p.faction !== "farbound" || u?.type !== "surveyor")
+  if (factionRules(p) !== "farbound" || u?.type !== "surveyor")
     return { ok: false, message: "Select a Long-Range Surveyor." };
   if (p.surveyUsedTurn === game.turn || u.readyTurn > game.turn)
     return {
@@ -221,7 +233,7 @@ export function longRangeSurvey(
       message: "Long-Range Survey is unavailable this Turn.",
     };
   if (!recordSurvey(game, playerId, hexId))
-    return { ok: false, message: "Choose a publicly unrevealed hex." };
+    return { ok: false, message: "Choose a publicly unrevealed hex not already surveyed." };
   p.surveyUsedTurn = game.turn;
   u.usedTurn = game.turn;
   return {
@@ -245,10 +257,15 @@ export function surveyExchange(
       ok: false,
       message: "Survey Exchange requires Policy II.",
     };
-  if (seller.faction !== "farbound" || !survey || h?.revealed)
+  if (factionRules(seller) !== "farbound" || !survey || h?.revealed)
     return {
       ok: false,
       message: "Only unrevealed Farbound survey data may be sold.",
+    };
+  if (survey.tradableTurn !== undefined && survey.tradableTurn !== game.turn)
+    return {
+      ok: false,
+      message: "Survey intelligence is tradable only during the Turn it was gathered.",
     };
   if (price < 0 || buyer.resources.currency < price)
     return {
@@ -280,7 +297,7 @@ export function brokerTrade(
   const broker = game.players[meridianId],
     pa = game.players[a],
     pb = game.players[b];
-  if (broker.faction !== "meridian" || new Set([meridianId, a, b]).size < 3)
+  if (factionRules(broker) !== "meridian" || new Set([meridianId, a, b]).size < 3)
     return {
       ok: false,
       message: "Brokerage requires the Meridian and two other civilizations.",
@@ -297,13 +314,13 @@ export function brokerTrade(
       message:
         "Brokerage currently handles Material, Currency, and Research. Labor requires direct agreements.",
     };
-  for (const r of ["material", "currency", "research"] as Resource[])
+  for (const r of ["material", "currency", "research"] as TradableResource[])
     if (pa.resources[r] < aGives[r] || pb.resources[r] < bGives[r])
       return {
         ok: false,
         message: "One civilization cannot provide the agreed exchange.",
       };
-  for (const r of ["material", "currency", "research"] as Resource[]) {
+  for (const r of ["material", "currency", "research"] as TradableResource[]) {
     pa.resources[r] -= aGives[r];
     pb.resources[r] += aGives[r];
     pb.resources[r] -= bGives[r];
@@ -322,7 +339,7 @@ export function brokerTrade(
 }
 export function economicSalvage(game: GameState, playerId: number) {
   const p = game.players[playerId];
-  if (p.faction !== "meridian" || p.tech.Economy < 3)
+  if (factionRules(p) !== "meridian" || p.tech.Economy < 3)
     return {
       ok: false,
       message: "Economic Salvage requires the Meridian at Economy III.",

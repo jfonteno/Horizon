@@ -16,7 +16,17 @@ import type {
  * ownership accordingly.
  */
 export type RoomCommand =
+  | { kind: "setReady"; ready: boolean }
+  | { kind: "startGame" }
+  | { kind: "pauseGame" }
+  | { kind: "resumeGame" }
+  | { kind: "endGame" }
+  | { kind: "convertSeatToBot"; playerId: number; profileId: string }
+  | { kind: "drawHidden" }
   | { kind: "selectHidden"; cardId: string }
+  | { kind: "setHiddenCompleted"; completed: boolean }
+  | { kind: "claimUniversal"; objectiveId: string }
+  | { kind: "claimCivilization"; objectiveId: string }
   | { kind: "submitOrders"; orders: SecretOrder[] }
   | { kind: "proposeTrade"; to: number; offer: TradeBundle; request: TradeBundle }
   | { kind: "proposeAgreement"; to: number; agreementType: AgreementType }
@@ -34,6 +44,8 @@ export type RoomCommand =
   | { kind: "marketExchange"; give: Resource; get: Resource }
   | { kind: "politicalCapital"; output: "currency" | "material" | "labor" }
   | { kind: "economicSalvage" }
+  | { kind: "negotiationSurvey"; hexId: string }
+  | { kind: "transferCombatUnit"; carrierId: string; direction: "load" | "unload"; amount?: number }
   | {
       kind: "surveyExchange";
       buyerId: number;
@@ -52,6 +64,7 @@ export type RoomCommand =
 export type RoomCommandEnvelope = {
   token: string;
   expectedRevision: number;
+  commandId: string;
   command: RoomCommand;
 };
 
@@ -62,7 +75,17 @@ export type RoomCommandResult = {
 
 export function roomCommandLabel(command: RoomCommand): string {
   switch (command.kind) {
+    case "setReady": return command.ready ? "Mark seat ready" : "Mark seat not ready";
+    case "startGame": return "Start network game";
+    case "pauseGame": return "Pause network game";
+    case "resumeGame": return "Resume network game";
+    case "endGame": return "End network game";
+    case "convertSeatToBot": return "Assign bot takeover";
+    case "drawHidden": return "Draw Hidden Legacy choices";
     case "selectHidden": return "Select Hidden Legacy";
+    case "setHiddenCompleted": return "Update Hidden Legacy completion";
+    case "claimUniversal": return "Claim Universal Legacy";
+    case "claimCivilization": return "Claim Civilization Legacy";
     case "submitOrders": return "Submit sealed Orders";
     case "proposeTrade": return "Propose trade";
     case "proposeAgreement": return "Propose agreement";
@@ -74,8 +97,47 @@ export function roomCommandLabel(command: RoomCommand): string {
     case "marketExchange": return "System Market exchange";
     case "politicalCapital": return "Political Capital";
     case "economicSalvage": return "Economic Salvage";
+    case "negotiationSurvey": return "Farbound Negotiation Survey";
+    case "transferCombatUnit": return `${command.direction === "load" ? "Load" : "Station"} CU`;
     case "surveyExchange": return "Survey Exchange";
     case "brokerTrade": return "Meridian Brokerage";
     case "removeCapturedCenter": return "Remove captured Center";
   }
+}
+
+const commandKinds = new Set([
+  "setReady", "startGame", "pauseGame", "resumeGame", "endGame",
+  "convertSeatToBot", "drawHidden", "selectHidden", "setHiddenCompleted",
+  "claimUniversal", "claimCivilization", "submitOrders", "proposeTrade",
+  "proposeAgreement", "proposeTechnology", "respondProposal", "cancelProposal",
+  "withdrawAgreement", "breakAgreement", "marketExchange", "politicalCapital",
+  "economicSalvage", "negotiationSurvey", "transferCombatUnit", "surveyExchange", "brokerTrade",
+  "removeCapturedCenter",
+]);
+
+/** Runtime boundary for untrusted JSON. Rules functions perform deeper legality checks. */
+export function validateRoomCommand(value: unknown): RoomCommand {
+  if (!value || typeof value !== "object") throw new Error("A room command object is required.");
+  const command = value as Record<string, unknown>;
+  if (typeof command.kind !== "string" || !commandKinds.has(command.kind))
+    throw new Error("That room command kind is not supported.");
+  const serialized = JSON.stringify(command);
+  if (serialized.length > 50_000) throw new Error("That room command is too large.");
+  const integerFields = ["playerId", "to", "buyer", "level", "centerIndex", "amount", "buyerId", "price", "a", "b"];
+  for (const field of integerFields)
+    if (field in command && (!Number.isInteger(command[field]) || Number(command[field]) < 0))
+      throw new Error(`${field} must be a non-negative integer.`);
+  const stringFields = ["cardId", "objectiveId", "proposalId", "agreementId", "carrierId", "hexId", "profileId"];
+  for (const field of stringFields)
+    if (field in command && (typeof command[field] !== "string" || !(command[field] as string).trim() || (command[field] as string).length > 120))
+      throw new Error(`${field} must be a short non-empty string.`);
+  if (command.kind === "submitOrders") {
+    if (!Array.isArray(command.orders) || command.orders.length > 80)
+      throw new Error("Orders must be an array containing no more than 80 entries.");
+    for (const order of command.orders as unknown[]) {
+      if (!order || typeof order !== "object" || typeof (order as Record<string, unknown>).kind !== "string" || typeof (order as Record<string, unknown>).id !== "string")
+        throw new Error("Every sealed Order requires an id and kind.");
+    }
+  }
+  return command as RoomCommand;
 }

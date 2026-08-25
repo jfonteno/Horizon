@@ -31,6 +31,8 @@ game/
   types.ts                   Shared game-state contracts
 docs/
   ARCHITECTURE.md            Extension guide
+  CONTENT_PACKS.md           Drop-in map and faction authoring guide
+  SELF_HOSTING.md            Physical server and Cloudflare Tunnel guide
 public/                      Logos and visual assets
 bots/                        Drop-in AI personality profiles and schema
 app/api/rooms/               Server room API
@@ -51,8 +53,79 @@ Before committing:
 
 ```bash
 npm run lint
+npm run typecheck
 npm test
 ```
+
+## Content Packs
+
+Version 0.17.0 loads validated external maps, factions, and visual assets from `data/content` without rebuilding Horizon. See [docs/CONTENT_PACKS.md](docs/CONTENT_PACKS.md) and the included `content-packs/frontier-example` reference.
+
+## Version 0.17.2: Randomized Starting Positions
+
+- Shuffle the selected factions among the map's active starting hexes for every new game.
+- Keep explorers, colony ships, starting carriers, home ownership, and faction-specific starting Centers synchronized.
+- Reproduce the same starting assignment from the same game seed without changing the seeded tile layout.
+- Support the currently active starting hexes for four, five, and six-player games and external maps.
+
+## Version 0.17.1: Farbound Survey and Interface Polish
+
+- Replace the Farbound explorer's short-range Forward Scan with one private Negotiation Survey per Turn.
+- Trade that new survey intelligence during the Turn in which it was gathered.
+- Preserve the Long-Range Surveyor and its existing Orders-phase Long-Range Survey ability.
+- Use a more futuristic condensed interface font stack and a larger board-header logo.
+
+## Version 0.17.0: Content Pack Foundation
+
+- Drop versioned map and faction folders into a self-hosted server and activate them with a restart.
+- Select installed maps and factions dynamically during game setup.
+- Pin exact pack versions in saves and multiplayer rooms.
+- Reuse deterministic core faction mechanics and AI doctrines without arbitrary executable plugins.
+- Validate packs, local assets, compatibility, paths, sizes, and IDs before play.
+- Back up external content together with persistent rooms.
+
+## Self-host a multiplayer server
+
+Version 0.16.1 introduced the Docker deployment with durable local room storage, health checks, backups, guarded restores, and an optional Cloudflare Tunnel. See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
+
+## Version 0.16.1: Self-Hosted Deployment
+
+- Run Horizon on a physical server with Docker Compose and restart-safe room storage.
+- Check application and storage readiness through `/api/health`.
+- Add an optional outbound-only Cloudflare Tunnel without exposing the game port publicly.
+- Back up and restore room data with retention and recovery safeguards.
+- Publish verified container images to GitHub Container Registry on main and version tags.
+
+## Version 0.16.0: Multiplayer Beta
+
+- New network games begin in a readiness lobby with player and spectator invitation links.
+- Hosts can start, pause, resume, end, archive, and assign disconnected or open seats to the Strategic Director bot.
+- Browser-held seat credentials reconnect automatically after refresh or temporary connection loss.
+- Every command carries an idempotency key, passes runtime payload validation, and remains protected by atomic room revisions.
+- Versioned room payloads migrate earlier network rooms without replacing their game state.
+- Public room history records seat, phase, Order, and diplomacy activity while concealing private terms.
+- Defensive Pact forces combine with a Habitat owner during defense, while Alliance forces form deterministic combat coalitions.
+- Coalition casualties, Varkesh rewards, and Habitat capture ownership use stable deterministic ordering.
+- Required Hidden Legacy, capture, and diplomatic decisions display attention badges and blocking guidance.
+- Spectators can pause their local view or select fast, live, and slow synchronization speeds.
+- Completed network games use the full LP, resources, Habitats, and trade history dashboard.
+
+## Version 0.15.0: Network Operations
+
+- Command task forces from the shared map with private simultaneous movement Orders.
+- Group ready carriers in one hex, preview adjacent public combat strength, and target legal destinations.
+- Load and station Combat Units through authenticated server commands.
+- Pause network play for mandatory captured-Center bookkeeping and resume after the conquering player decides.
+- Send direct trades, formal agreements, and Helix Technology Exchange proposals.
+- Accept, reject, and cancel proposals from private player views.
+- Withdraw from agreements at Turn end or break them immediately under the normal rules and penalties.
+- Use Aurelian Political Capital and the existing faction economy commands online.
+- Preserve private objectives, surveys, proposals, sealed Orders, and bot analysis in public spectator views.
+- Reject conflicting room writes with atomic revision checks.
+
+## Version 0.14.0: Network Playable Alpha
+
+- Added authoritative network rooms, authenticated private seats, public spectator projections, interactive map targeting, server-side Order validation, and automatic bot resolution.
 
 ## Version 0.13.0: Strategic Mind
 

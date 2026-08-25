@@ -1,7 +1,8 @@
 import { getNeighbors } from "../engine/geometry";
+import { factionRules } from "../factions";
 import { mapLibrary } from "../maps";
 import type { CarrierState, CarrierType, GameState, HexState, PlayerState } from "../types";
-import { hasBenefit } from "./diplomacy";
+import { hasAgreement, hasBenefit } from "./diplomacy";
 import { canPay, spend } from "./economy";
 
 export type CarrierDefinition = {
@@ -33,14 +34,14 @@ const standardTypes: CarrierType[] = ["patrol", "transport", "frigate", "assault
 export function carrierCost(player: PlayerState, type: CarrierType): Record<string, number> {
   const definition = carrierLibrary[type];
   const cost = { ...definition.cost };
-  if (player.faction === "varkesh" && !definition.faction) cost.material = Math.max(1, (cost.material || 0) - 1);
+  if (factionRules(player) === "varkesh" && !definition.faction) cost.material = Math.max(1, (cost.material || 0) - 1);
   return cost;
 }
 
 export function availableCarrierTypes(player: PlayerState): CarrierType[] {
   const available = standardTypes.filter(type => carrierLibrary[type].tech <= player.tech.Military);
-  if (player.faction === "varkesh" && player.tech.Military >= 2) available.push("corvette");
-  if (player.faction === "varkesh" && player.tech.Military >= 4) available.push("xebec");
+  if (factionRules(player) === "varkesh" && player.tech.Military >= 2) available.push("corvette");
+  if (factionRules(player) === "varkesh" && player.tech.Military >= 4) available.push("xebec");
   return available;
 }
 
@@ -170,13 +171,13 @@ function captureHabitat(game: GameState, habitat: HexState, attackerId: number):
   habitat.owner = attackerId;
   habitat.combat = 0;
   habitat.pendingCombat = [];
-  if (attacker.faction !== "varkesh") habitat.tier = habitat.tier === "Metropolis" ? "Colony" : habitat.tier === "Colony" ? "Outpost" : habitat.tier;
+  if (factionRules(attacker) !== "varkesh") habitat.tier = habitat.tier === "Metropolis" ? "Colony" : habitat.tier === "Colony" ? "Outpost" : habitat.tier;
   const excess = Math.max(0, habitat.centers.length - tierSlots(habitat.tier));
   if (excess) game.pendingCenterLoss = { hexId: habitat.id, playerId: attackerId, removeCount: excess };
   attacker.legacyMetrics.habitatsCaptured[game.era - 1]++;
   if (capturedTier === "Metropolis") attacker.legacyMetrics.metropolisCaptured[game.era - 1]++;
   if (habitat.originalOwner !== undefined && habitat.originalOwner !== attackerId && !attacker.legacyMetrics.originalHabitatsCaptured.includes(habitat.originalOwner)) attacker.legacyMetrics.originalHabitatsCaptured.push(habitat.originalOwner);
-  game.log.unshift(`${attacker.name} captured ${habitat.id} from ${game.players[oldOwner].name}${attacker.faction === "varkesh" ? " without tier loss" : ""}.`);
+  game.log.unshift(`${attacker.name} captured ${habitat.id} from ${game.players[oldOwner].name}${factionRules(attacker) === "varkesh" ? " without tier loss" : ""}.`);
 }
 
 export function removeCapturedCenter(game: GameState, playerId: number, centerIndex: number): { ok: boolean; message: string } {
@@ -193,7 +194,7 @@ export function removeCapturedCenter(game: GameState, playerId: number, centerIn
 
 function awardVarkesh(game: GameState, winnerId: number, opponents: number[]): void {
   const winner = game.players[winnerId] as PlayerState & { gloryAwards?: { turn: number; opponents: number[] } };
-  if (winner.faction !== "varkesh") return;
+  if (factionRules(winner) !== "varkesh") return;
   if (!winner.gloryAwards || winner.gloryAwards.turn !== game.turn) winner.gloryAwards = { turn: game.turn, opponents: [] };
   opponents.forEach(opponent => {
     if (!winner.gloryAwards!.opponents.includes(opponent)) {
@@ -302,44 +303,82 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
         fleet.reduce((sum, carrier) => sum + carrier.cu, 0) + stationed + guard,
     };
   });
-  const strongest = [...forces].sort(
-    (a, b) => b.totalCS - a.totalCS || a.owner - b.owner,
-  )[0];
-  const opposition = forces
-    .filter((force) => force.owner !== strongest.owner)
-    .reduce((sum, force) => sum + force.totalCS, 0);
-  const tiedStrongest =
-    forces.filter((force) => force.totalCS === strongest.totalCS).length > 1;
+
+  // Alliances always operate as one coalition. A Defensive Pact joins a
+  // co-stationed partner to the Habitat owner's defense when an outsider
+  // attacks. This avoids the old result where friendly forces were counted as
+  // opposition simply because they had separate owners.
+  const parent = new Map(involved.map((owner) => [owner, owner]));
+  const root = (owner: number): number => {
+    const current = parent.get(owner)!;
+    if (current === owner) return owner;
+    const resolved = root(current);
+    parent.set(owner, resolved);
+    return resolved;
+  };
+  const unite = (a: number, b: number) => {
+    const ar = root(a), br = root(b);
+    if (ar !== br) parent.set(Math.max(ar, br), Math.min(ar, br));
+  };
+  for (let a = 0; a < involved.length; a++)
+    for (let b = a + 1; b < involved.length; b++)
+      if (
+        hasAgreement(game, involved[a], involved[b], "alliance") ||
+        (habitat?.owner !== undefined &&
+          (involved[a] === habitat.owner || involved[b] === habitat.owner) &&
+          hasBenefit(game, involved[a], involved[b], "defensive"))
+      )
+        unite(involved[a], involved[b]);
+
+  const coalitions = new Map<number, typeof forces>();
+  for (const force of forces) {
+    const coalition = root(force.owner);
+    coalitions.set(coalition, [...(coalitions.get(coalition) || []), force]);
+  }
+  const coalitionForces = [...coalitions.entries()].map(([id, members]) => ({
+    id,
+    members,
+    owners: members.map((member) => member.owner),
+    fleet: members.flatMap((member) => member.fleet),
+    unitCS: members.reduce((sum, member) => sum + member.unitCS, 0),
+    totalCS: members.reduce((sum, member) => sum + member.totalCS, 0),
+  }));
+  const coalitionsHostile = (a: typeof coalitionForces[number], b: typeof coalitionForces[number]) =>
+    a.owners.some((ownerA) => b.owners.some((ownerB) => hostile(game, ownerA, ownerB)));
+  const participating = coalitionForces.filter((coalition) => coalitionForces.some((other) => other.id !== coalition.id && coalitionsHostile(coalition, other)));
+  const strongest = [...participating].sort((a, b) => b.totalCS - a.totalCS || a.id - b.id)[0];
+  const oppositionCoalitions = participating.filter((coalition) => coalition.id !== strongest.id && coalitionsHostile(strongest, coalition));
+  const opposition = oppositionCoalitions.reduce((sum, coalition) => sum + coalition.totalCS, 0);
+  const tiedStrongest = oppositionCoalitions.some((coalition) => coalition.totalCS === strongest.totalCS);
   if (tiedStrongest || strongest.totalCS <= opposition) {
-    removeForce(game, carriers);
-    if (habitat) habitat.combat = 0;
+    removeForce(game, participating.flatMap((coalition) => coalition.fleet));
+    if (habitat?.owner !== undefined && participating.some((coalition) => coalition.owners.includes(habitat.owner!))) habitat.combat = 0;
     game.log.unshift(
-      `Simultaneous combat at ${destination} destroyed every participating force.`,
+      `Coalition combat at ${destination} ended in mutual destruction.`,
     );
     return;
   }
 
   const survivingUnits = Math.max(1, strongest.unitCS - opposition);
-  for (const force of forces)
-    if (force.owner !== strongest.owner) removeForce(game, force.fleet);
-  if (habitat?.owner === strongest.owner) {
+  for (const coalition of oppositionCoalitions) removeForce(game, coalition.fleet);
+  const habitatHeld = habitat?.owner !== undefined && strongest.owners.includes(habitat.owner);
+  if (habitat && habitatHeld) {
     habitat.combat = Math.min(habitat.combat, survivingUnits);
-    trimCarriers(
-      game,
-      strongest.fleet,
-      Math.max(0, survivingUnits - habitat.combat),
-    );
+    trimCarriers(game, strongest.fleet, Math.max(0, survivingUnits - habitat.combat));
   } else {
     trimCarriers(game, strongest.fleet, survivingUnits);
-    if (habitat) captureHabitat(game, habitat, strongest.owner);
+    if (habitat) {
+      const captor = [...strongest.members]
+        .filter((member) => member.fleet.length)
+        .sort((a, b) => b.fleet.reduce((sum, carrier) => sum + carrier.cu, 0) - a.fleet.reduce((sum, carrier) => sum + carrier.cu, 0) || a.owner - b.owner)[0];
+      if (captor) captureHabitat(game, habitat, captor.owner);
+    }
   }
-  awardVarkesh(
-    game,
-    strongest.owner,
-    forces.filter((force) => force.owner !== strongest.owner).map((force) => force.owner),
-  );
+  const defeated = oppositionCoalitions.flatMap((coalition) => coalition.owners);
+  strongest.owners.forEach((owner) => awardVarkesh(game, owner, defeated));
+  const winners = strongest.owners.map((owner) => game.players[owner].name).join(" and ");
   game.log.unshift(
-    `${game.players[strongest.owner].name} won simultaneous combat at ${destination} against ${opposition} combined opposition CS.`,
+    `${winners} won coalition combat at ${destination}, ${strongest.totalCS} CS to ${opposition} combined opposition CS.`,
   );
 }
 
@@ -419,13 +458,16 @@ function resolveCombat(game: GameState, attackerId: number, destination: string)
   game.carriers.filter(carrier => carrier.hex === destination && carrier.owner !== attackerId && !hasBenefit(game, attackerId, carrier.owner, "defensive")).forEach(carrier => hostileOwners.add(carrier.owner));
   if (habitat?.owner !== undefined) hostileOwners.add(habitat.owner);
   if (!hostileOwners.size) return;
-  const hostileCarriers = game.carriers.filter(carrier => carrier.hex === destination && hostileOwners.has(carrier.owner));
+  const defendingOwners = new Set(hostileOwners);
+  if (habitat?.owner !== undefined)
+    game.carriers.filter(carrier => carrier.hex === destination && carrier.owner !== attackerId && hasBenefit(game, habitat.owner!, carrier.owner, "defensive")).forEach(carrier => defendingOwners.add(carrier.owner));
+  const hostileCarriers = game.carriers.filter(carrier => carrier.hex === destination && defendingOwners.has(carrier.owner));
   const attackCS = attackers.reduce((sum, carrier) => sum + carrier.cu, 0);
   const defendingCU = hostileCarriers.reduce((sum, carrier) => sum + carrier.cu, 0) + (habitat?.combat || 0);
   const assaultReduction = habitat && attackers.some(carrier => carrier.type === "assault") ? 1 : 0;
   const homeGuard = habitat ? Math.max(0, (habitat.centers.includes("defense") ? 3 : 1) - assaultReduction) : 0;
   const defenseCS = defendingCU + homeGuard;
-  const opponentIds = [...hostileOwners];
+  const opponentIds = [...defendingOwners];
   if (attackCS > defenseCS) {
     trimCarriers(game, attackers, attackCS - defenseCS);
     game.carriers = game.carriers.filter(carrier => !hostileCarriers.some(hostile => hostile.id === carrier.id));

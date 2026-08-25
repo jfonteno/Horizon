@@ -1,4 +1,5 @@
 import type { CarrierType, CivilianUnitType, HexKind } from "../types";
+import type { MapDefinition } from "../maps";
 
 export const tileAssets: Record<HexKind | "unrevealed", string> = {
   material: "/tiles/tile-material.webp",
@@ -34,3 +35,7 @@ export function explorationIcon(level: number): ExplorationShipIcon {
   return "explorer";
 }
 
+export function tileAssetFor(map: MapDefinition, kind: HexKind, revealed = true) {
+  const key = revealed ? kind : "unrevealed";
+  return map.tileAssets?.[key] || tileAssets[key];
+}

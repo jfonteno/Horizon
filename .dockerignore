@@ -1,0 +1,16 @@
+.git
+.github
+.next
+.sites-runtime
+.wrangler
+backups
+data
+dist
+node_modules
+outputs
+releases
+work
+*.log
+*.tsbuildinfo
+.env*
+!.env.self-host.example

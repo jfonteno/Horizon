@@ -11,6 +11,7 @@ import type {
   TradeProposal,
   TradableResource,
 } from "../types";
+import { factionRules } from "../factions";
 import { technologyCosts } from "./economy";
 
 export const emptyTradeBundle = (): TradeBundle => ({
@@ -59,13 +60,13 @@ export const agreementRules: Record<
     policy: 3,
     cost: 2,
     effect:
-      "Records permission for co-stationed defense; combined combat remains table-managed.",
+      "Co-stationed forces combine with the Habitat owner's defense as one deterministic coalition.",
   },
   alliance: {
     policy: 3,
     cost: 3,
     effect:
-      "Includes Trade, Open Borders, Defensive Pact, and non-hostility benefits.",
+      "Includes Trade, Open Borders, Defensive Pact, non-hostility, and combined coalition combat.",
   },
 };
 
@@ -337,7 +338,7 @@ export function agreementCost(
   const player = game.players[playerId];
   if (
     type === "trade" &&
-    player.faction === "meridian" &&
+    factionRules(player) === "meridian" &&
     !player.diplomacy.firstTradeAgreementUsed
   )
     return 0;
@@ -408,7 +409,7 @@ export function technologyCost(
   const exchangeResearch = exchange
     ? Math.ceil(baseResearch / 2)
     : baseResearch;
-  const factionDiscount = !exchange && player.faction === "helix" ? 1 : 0;
+  const factionDiscount = !exchange && factionRules(player) === "helix" ? 1 : 0;
   const agreementDiscount = researchAgreementDiscount(game, player);
   return {
     research: Math.max(
@@ -444,7 +445,7 @@ export function addTechnologyProposal(
 ): { ok: boolean; message: string } {
   const seller = game.players[proposal.seller],
     buyer = game.players[proposal.buyer];
-  if (seller.faction !== "helix")
+  if (factionRules(seller) !== "helix")
     return {
       ok: false,
       message: "Only the Helix may offer Technology Exchange.",
@@ -541,7 +542,7 @@ export function resolveProposal(
       [to, from],
     ] as [PlayerState, PlayerState][]) {
       const hosted =
-        aurelian.faction === "aurelians" &&
+        factionRules(aurelian) === "aurelians" &&
         game.civilianUnits.some(
           (unit) =>
             unit.owner === aurelian.id &&
@@ -591,17 +592,17 @@ export function resolveProposal(
     to.resources.influence -= toCost;
     if (proposal.agreementType === "trade") {
       if (
-        from.faction === "meridian" &&
+        factionRules(from) === "meridian" &&
         !from.diplomacy.firstTradeAgreementUsed
       )
         from.diplomacy.firstTradeAgreementUsed = true;
-      if (to.faction === "meridian" && !to.diplomacy.firstTradeAgreementUsed)
+      if (factionRules(to) === "meridian" && !to.diplomacy.firstTradeAgreementUsed)
         to.diplomacy.firstTradeAgreementUsed = true;
     }
     ([from, to] as PlayerState[]).forEach((player, index) => {
       const partner = index === 0 ? to.id : from.id;
       if (
-        player.faction === "aurelians" &&
+        factionRules(player) === "aurelians" &&
         !player.diplomacy.firstAgreementPartners.includes(partner)
       ) {
         player.diplomacy.firstAgreementPartners.push(partner);
@@ -752,7 +753,7 @@ export function politicalCapital(
   output: "currency" | "material" | "labor",
 ): { ok: boolean; message: string } {
   const player = game.players[playerId];
-  if (player.faction !== "aurelians" || player.tech.Policy < 2)
+  if (factionRules(player) !== "aurelians" || player.tech.Policy < 2)
     return {
       ok: false,
       message: "Political Capital requires the Aurelians at Policy II.",

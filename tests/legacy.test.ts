@@ -28,16 +28,16 @@ test("automatic Hidden Legacy scores only at Era scoring",()=>{
   const state=game.players[0].hiddenLegacy[1];
   const automatic=state.choices.map(id=>hiddenLegacyDeck.find(card=>card.id===id)!).find(card=>card.automatic)!;
   assert.equal(selectHiddenLegacy(game,0,automatic.id),true);
-  if(automatic.id==="h1-first") game.hexes.filter(hex=>hex.owner===0)[0].tier="Metropolis";
-  else if(automatic.id==="h1-specialist") game.players[0].legacyMetrics.technologyAdvances[0]=["Military","Military"];
-  else if(automatic.id==="h1-renaissance") game.players[0].legacyMetrics.technologyAdvances[0]=["Military","Economy"];
+  if(automatic.id==="h1-first") {const extra=game.hexes.find(hex=>hex.owner===undefined&&hex.kind!=="rift")!;extra.owner=0;extra.tier="Outpost";extra.revealed=true;extra.centers=["material"];}
+  else if(automatic.id==="h1-specialist") {game.players[0].legacyMetrics.technologyAdvances[0]=["Military"];game.players[0].resources.research=2;}
+  else if(automatic.id==="h1-renaissance") {game.players[0].legacyMetrics.technologyAdvances[0]=["Military"];game.players[0].legacyMetrics.habitatsEstablished[0]=1;}
   else if(automatic.id==="h1-mobilization"){game.players[0].legacyMetrics.builtVessels[0]=1;game.players[0].legacyMetrics.recruitedCU[0]=2;game.players[0].legacyMetrics.builtCenters[0]=1}
   else if(automatic.id==="h1-peace"){game.players[0].legacyMetrics.habitatsEstablished[0]=1;game.players[0].legacyMetrics.technologyAdvances[0]=["Military"]}
   else if(automatic.id==="h1-pioneer"){game.players[0].eraTributes[0]=1;game.players[0].legacyMetrics.habitatsEstablished[0]=1}
   else if(automatic.id==="h1-surveyor")game.players[0].legacyMetrics.revealedHexes[0]=4;
-  else if(automatic.id==="h1-frontier")game.players[0].legacyMetrics.habitatsEstablished[0]=2;
-  else if(automatic.id==="h1-merchant")game.players[0].legacyMetrics.tradePartners[0]=[1,2,3];
-  else if(automatic.id==="h1-investment")game.players[0].legacyMetrics.receivedTradeValue[0]=5;
+  else if(automatic.id==="h1-frontier")game.players[0].legacyMetrics.habitatsEstablished[0]=1;
+  else if(automatic.id==="h1-merchant")game.players[0].legacyMetrics.tradePartners[0]=[1,2];
+  else if(automatic.id==="h1-investment")game.players[0].legacyMetrics.receivedTradeValue[0]=3;
   scoreHiddenEra(game,1);
   assert.equal(state.scored,true);
   assert.equal(state.completed,true);

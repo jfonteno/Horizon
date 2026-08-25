@@ -1,4 +1,5 @@
 import { getNeighbors } from "../engine/geometry";
+import { factionRules } from "../factions";
 import { mapLibrary } from "../maps";
 import { projectPrivateGame } from "../server/private-view";
 import type {
@@ -23,7 +24,7 @@ import {
   tradeEligibility,
   technologyCost,
 } from "../rules/diplomacy";
-import { availableCivilianType, brokerTrade, economicSalvage, surveyExchange } from "../rules/faction-operations";
+import { availableCivilianType, brokerTrade, economicSalvage, negotiationSurvey, surveyExchange } from "../rules/faction-operations";
 import {
   availableCarrierTypes,
   carrierLibrary,
@@ -153,7 +154,7 @@ function reviewDiplomacy(game: GameState, playerId: number, profile: BotProfile,
     } else {
       const proposer = game.players[proposal.from], ownStrength = totalCombatUnits(game, playerId), theirStrength = totalCombatUnits(game, proposer.id);
       const useful = proposal.agreementType === "trade" || proposal.agreementType === "research" ||
-        proposal.agreementType === "nonAggression" || player.faction === "aurelians" || player.faction === "meridian";
+        proposal.agreementType === "nonAggression" || factionRules(player) === "aurelians" || factionRules(player) === "meridian";
       const defensiveNeed = theirStrength >= ownStrength || player.lp < Math.max(...game.players.map((candidate) => candidate.lp));
       const cost = agreementCost(game, playerId, proposal.agreementType);
       accept = player.resources.influence >= cost && (useful || defensiveNeed);
@@ -175,7 +176,7 @@ function initiateDiplomacy(game: GameState, playerId: number, profile: BotProfil
   const offers = tradable
     .filter((resource) => player.resources[resource] > Math.max(1, cost[resource] || 0))
     .sort((a, b) => player.resources[b] - player.resources[a]);
-  if (player.faction === "helix") {
+  if (factionRules(player) === "helix") {
     const exchange = game.players.filter((candidate) => candidate.id !== playerId)
       .flatMap((buyer) => branches.filter((branch) => player.tech[branch] === buyer.tech[branch] + 1 &&
         buyer.techAdvancedTurn !== game.turn && tradeEligibility(game, playerId, buyer.id).ok)
@@ -290,7 +291,7 @@ function initiateDiplomacy(game: GameState, playerId: number, profile: BotProfil
       complement: needs.reduce((sum, resource) => sum + Math.max(0, candidate.resources[resource] - (cost[resource] || 0)), 0) +
         offers.reduce((sum, resource) => sum + Math.max(0, (cost[resource] || 0) - candidate.resources[resource]), 0),
     }))
-    .filter((entry) => entry.complement > 0 || player.faction === "aurelians")
+    .filter((entry) => entry.complement > 0 || factionRules(player) === "aurelians")
     .sort((a, b) => b.complement - a.complement || a.candidate.id - b.candidate.id)[0]?.candidate;
   if (agreementPartner && player.resources.influence > 0 && profile.priorities.diplomacy > 0) {
     const result = addAgreementProposal(game, {
@@ -313,7 +314,22 @@ function initiateDiplomacy(game: GameState, playerId: number, profile: BotProfil
 function executeFactionEconomy(game: GameState, playerId: number, profile: BotProfile, plan: BotStrategicPlan) {
   const player = game.players[playerId], actions: string[] = [];
   if (!profile.behaviors.factionDoctrine) return actions;
-  if (player.faction === "aurelians" && !player.eraTributes[game.era - 1]) {
+  if (factionRules(player) === "farbound" && player.negotiationSurveyUsedTurn !== game.turn) {
+    const targets = game.hexes
+      .filter((hex) => !hex.revealed && !player.privateSurveys.some((survey) => survey.hexId === hex.id))
+      .sort((a, b) => {
+        const aScore = Number(getNeighbors(player.colonyShip, mapLibrary[game.mapId]).includes(a.id)) * 2 + Number(getNeighbors(player.explorer, mapLibrary[game.mapId]).includes(a.id));
+        const bScore = Number(getNeighbors(player.colonyShip, mapLibrary[game.mapId]).includes(b.id)) * 2 + Number(getNeighbors(player.explorer, mapLibrary[game.mapId]).includes(b.id));
+        return bScore - aScore || a.id.localeCompare(b.id);
+      });
+    for (const target of targets) {
+      const result = negotiationSurvey(game, playerId, target.id);
+      if (!result.ok) continue;
+      actions.push("Faction doctrine: gathered one private survey for settlement planning and same-Turn information trade.");
+      break;
+    }
+  }
+  if (factionRules(player) === "aurelians" && !player.eraTributes[game.era - 1]) {
     for (let attempt = 0; attempt < 3 && !canPay(player, tributeCosts[game.era]); attempt++) {
       const output = (["material", "currency"] as const).find((resource) => player.resources[resource] < (tributeCosts[game.era][resource] || 0));
       if (!output) break;
@@ -324,14 +340,14 @@ function executeFactionEconomy(game: GameState, playerId: number, profile: BotPr
       actions.push(`Faction doctrine: converted Political Capital into ${output} for the Gate schedule.`);
     }
   }
-  if (player.faction === "meridian" && plan.gateEmergency && player.resources.currency < (tributeCosts[game.era].currency || 0)) {
+  if (factionRules(player) === "meridian" && plan.gateEmergency && player.resources.currency < (tributeCosts[game.era].currency || 0)) {
     const stationed = game.hexes.filter((hex) => hex.owner === playerId).reduce((sum, hex) => sum + hex.combat, 0);
     if (stationed >= 8) {
       const result = economicSalvage(game, playerId);
       if (result.ok) actions.push("Faction doctrine: converted surplus stationed CU into emergency Currency.");
     }
   }
-  if (player.faction === "meridian") {
+  if (factionRules(player) === "meridian") {
     const others = game.players.filter((candidate) => candidate.id !== playerId);
     outer: for (let aIndex = 0; aIndex < others.length; aIndex++) for (let bIndex = aIndex + 1; bIndex < others.length; bIndex++) {
       const a = others[aIndex], b = others[bIndex], cost = tributeCosts[game.era];
@@ -348,7 +364,7 @@ function executeFactionEconomy(game: GameState, playerId: number, profile: BotPr
       }
     }
   }
-  if (player.faction === "farbound" && player.tech.Policy >= 2) {
+  if (factionRules(player) === "farbound" && player.tech.Policy >= 2) {
     const survey = player.privateSurveys.find((entry) => !game.hexes.find((hex) => hex.id === entry.hexId)?.revealed && entry.soldTo.length < game.players.length - 1);
     const buyer = game.players.filter((candidate) => candidate.id !== playerId && !survey?.soldTo.includes(candidate.id) && candidate.resources.currency > (tributeCosts[game.era].currency || 0))
       .filter((candidate) => candidate.id !== plan.leaderId || plan.victoryPressure < 3)
@@ -386,13 +402,13 @@ function balanceGateViaMarket(game: GameState, playerId: number, profile: BotPro
 function objectiveAffinity(player: PlayerState, condition: string) {
   const text = condition.toLowerCase();
   let score = 0;
-  if (text.includes("technology")) score += player.faction === "helix" ? 18 : 7;
+  if (text.includes("technology")) score += factionRules(player) === "helix" ? 18 : 7;
   if (text.includes("habitat") || text.includes("colon")) score += ["foundry", "farbound"].includes(player.faction) ? 17 : 8;
   if (text.includes("trade") || text.includes("agreement")) score += ["aurelians", "meridian"].includes(player.faction) ? 19 : 5;
-  if (text.includes("combat") || text.includes("capture") || text.includes("cu")) score += player.faction === "varkesh" ? 20 : 4;
+  if (text.includes("combat") || text.includes("capture") || text.includes("cu")) score += factionRules(player) === "varkesh" ? 20 : 4;
   if (text.includes("tribute")) score += 8;
-  if (text.includes("survey") || text.includes("reveal")) score += player.faction === "farbound" ? 20 : 8;
-  if (text.includes("center") || text.includes("produce")) score += player.faction === "foundry" ? 17 : 7;
+  if (text.includes("survey") || text.includes("reveal")) score += factionRules(player) === "farbound" ? 20 : 8;
+  if (text.includes("center") || text.includes("produce")) score += factionRules(player) === "foundry" ? 17 : 7;
   return score;
 }
 
@@ -529,17 +545,6 @@ function movementCandidates(game: GameState, playerId: number, profile: BotProfi
       ["unit:explorer"],
     ));
   }
-  if (player.faction === "farbound" && player.forwardScanUsedTurn !== game.turn)
-    for (const targetId of getNeighbors(player.explorer, map)) {
-      const target = game.hexes.find((hex) => hex.id === targetId);
-      if (target && !target.revealed && target.kind !== "rift") result.push(candidate(
-        { id: `bot-scan-${targetId}`, kind: "forwardScan", hexId: targetId },
-        36 + objectiveBonus(condition, ["survey", "reveal"]),
-        ["Converts uncertainty into private Farbound information", "Preserves future settlement discount options"],
-        ["unit:explorer"],
-      ));
-    }
-
   const colonyHex = game.hexes.find((hex) => hex.id === player.colonyShip)!;
   if (player.modules > 0 && colonyHex.revealed && colonyHex.owner === undefined && economicKinds.includes(colonyHex.kind)) {
     const value = productionValue(game, playerId, colonyHex.kind);
@@ -634,7 +639,7 @@ function movementCandidates(game: GameState, playerId: number, profile: BotProfi
       if (target) result.push(candidate(
         { id: `bot-survey-${unit.id}-${target.id}`, kind: "longRangeSurvey", unitId: unit.id, hexId: target.id },
         42 + objectiveBonus(condition, ["survey"]),
-        ["Uses global private survey reach", "Creates information and settlement value"],
+        ["Uses the Surveyor's global private survey reach", "Creates long-lived information and settlement value"],
         [`unit:civilian:${unit.id}`],
       ));
     }
@@ -675,10 +680,10 @@ function constructionScore(game: GameState, playerId: number, habitat: HexState,
     } else {
       const scarcity = center === "labor" ? Math.max(0, 5 - player.laborCap) : Math.max(0, 4 - player.resources[center]);
       score += scarcity * 4;
-      if (player.faction === "helix" && center === "research") score += 20;
-      if (player.faction === "foundry" && center === "material") score += 16;
-      if (player.faction === "aurelians" && center === "influence") score += 16;
-      if (player.faction === "meridian" && center === "currency") score += 16;
+      if (factionRules(player) === "helix" && center === "research") score += 20;
+      if (factionRules(player) === "foundry" && center === "material") score += 16;
+      if (factionRules(player) === "aurelians" && center === "influence") score += 16;
+      if (factionRules(player) === "meridian" && center === "currency") score += 16;
       if (["material", "currency", "research"].includes(center))
         score += productionValue(game, playerId, center) * 0.7;
       if (center === "influence" && player.resources.influence < 2 &&
@@ -694,7 +699,7 @@ function constructionScore(game: GameState, playerId: number, habitat: HexState,
   } else if (construction.type === "carrier") {
     const definition = carrierLibrary[construction.carrier];
     score = 13 + definition.capacity * 1.8 + definition.move * 4;
-    if (player.faction === "varkesh") score += 14;
+    if (factionRules(player) === "varkesh") score += 14;
     reasons.push(`Adds ${definition.capacity} Capacity and ${definition.move} movement potential`);
     score += objectiveBonus(condition, ["vessel", "combat", "arsenal"]);
   } else {
@@ -733,12 +738,12 @@ function purchaseCandidates(game: GameState, playerId: number, profile: BotProfi
     if (projectedOrderBudget(game, playerId, [order]).error) continue;
     let score = 24 * profile.priorities.technology * profile.technology[branch] + (4 - player.tech[branch]) * 3;
     const reasons = [`Advances ${branch} from ${player.tech[branch]} to ${player.tech[branch] + 1}`];
-    if (player.faction === "varkesh" && branch === "Military") score += 20;
-    if (player.faction === "helix") score += branch === "Resource" || branch === "Military" ? 9 : 13;
-    if (player.faction === "foundry" && ["Resource", "Exploration"].includes(branch)) score += 18;
-    if (player.faction === "aurelians" && branch === "Policy") score += 18;
-    if (player.faction === "meridian" && branch === "Economy") score += 18;
-    if (player.faction === "farbound" && ["Exploration", "Policy"].includes(branch)) score += 18;
+    if (factionRules(player) === "varkesh" && branch === "Military") score += 20;
+    if (factionRules(player) === "helix") score += branch === "Resource" || branch === "Military" ? 9 : 13;
+    if (factionRules(player) === "foundry" && ["Resource", "Exploration"].includes(branch)) score += 18;
+    if (factionRules(player) === "aurelians" && branch === "Policy") score += 18;
+    if (factionRules(player) === "meridian" && branch === "Economy") score += 18;
+    if (factionRules(player) === "farbound" && ["Exploration", "Policy"].includes(branch)) score += 18;
     score += objectiveBonus(hiddenCondition(game, playerId), ["technology", branch.toLowerCase()]);
     reasons.push("Faction capability ledger and objective forecast favor this branch");
     result.push(candidate(order, score, reasons, ["technology"]));
@@ -840,7 +845,7 @@ function posture(game: GameState, playerId: number, threats: ReturnType<typeof t
   if (game.turn >= 14 && game.gate < game.players.length * 3) return "Gate stabilization with selective scoring";
   if (threats.some((entry) => entry.threat > entry.defense)) return "Defensive consolidation and counter-positioning";
   if (player.lp < leader) return "Efficient Legacy acceleration and leader denial";
-  if (player.faction === "varkesh") return "Controlled force projection";
+  if (factionRules(player) === "varkesh") return "Controlled force projection";
   return "Flexible expansion with resource optionality";
 }
 
@@ -930,10 +935,10 @@ export function resolveBotCaptureDecision(game: GameState, profile: BotProfile) 
   if (player.controller.kind !== "bot" || player.controller.profileId !== profile.id || !habitat) return false;
   const value = (center: CenterType) => {
     let score = center === "defense" ? 18 * profile.priorities.survival : center === "labor" ? 17 : 10;
-    if (player.faction === "helix" && center === "research") score += 12;
-    if (player.faction === "foundry" && center === "material") score += 12;
-    if (player.faction === "aurelians" && center === "influence") score += 12;
-    if (player.faction === "meridian" && center === "currency") score += 12;
+    if (factionRules(player) === "helix" && center === "research") score += 12;
+    if (factionRules(player) === "foundry" && center === "material") score += 12;
+    if (factionRules(player) === "aurelians" && center === "influence") score += 12;
+    if (factionRules(player) === "meridian" && center === "currency") score += 12;
     return score;
   };
   while (game.pendingCenterLoss) {

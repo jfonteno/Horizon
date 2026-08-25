@@ -27,6 +27,7 @@ export function projectPrivateGame(
           ...candidate,
           hiddenLegacy: {},
           privateSurveys: [],
+          negotiationSurveyUsedTurn: undefined,
           surveyUsedTurn: undefined,
           forwardScanUsedTurn: undefined,
         },
@@ -47,5 +48,27 @@ export function projectPrivateGame(
       (carrier) => carrier.id === carrierId && carrier.owner === playerId,
     ),
   );
+  return game;
+}
+
+export function projectSpectatorGame(source: GameState): GameState {
+  const game = structuredClone(source);
+  game.hexes = game.hexes.map((hex) =>
+    hex.revealed ? hex : { ...hex, kind: "empty" as HexKind, surveyedBy: [] },
+  );
+  game.players = game.players.map((player) => ({
+    ...player,
+    hiddenLegacy: {},
+    privateSurveys: [],
+    negotiationSurveyUsedTurn: undefined,
+    surveyUsedTurn: undefined,
+    forwardScanUsedTurn: undefined,
+  }));
+  game.proposals = [];
+  game.pendingLabor = [];
+  game.orderProtocol.submissions = [];
+  game.selectedCarrierIds = [];
+  game.botReports = [];
+  game.botMemory = [];
   return game;
 }

@@ -1,6 +1,7 @@
-import type { RoomCommandEnvelope } from "../../../../../game/server/command";
+import { validateRoomCommand, type RoomCommandEnvelope } from "../../../../../game/server/command";
 import { executeRoomCommand } from "../../../../../game/server/room-actions";
 import { getRoomRepository } from "../../../../../game/server/runtime";
+import { getContentCatalog, installContentCatalog } from "../../../../../game/content";
 
 type RouteContext = {
   params: { code: string } | Promise<{ code: string }>;
@@ -30,6 +31,9 @@ function errorStatus(message: string) {
 
 export async function POST(request: Request, context: RouteContext) {
   try {
+    installContentCatalog(getContentCatalog());
+    const contentLength = Number(request.headers.get("content-length") || 0);
+    if (contentLength > 60_000) throw new Error("Room command payload exceeds the 60 KB limit.");
     const { code } = await Promise.resolve(context.params);
     const body = (await request.json()) as Partial<RoomCommandEnvelope>;
 
@@ -48,6 +52,8 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!body.command || typeof body.command !== "object")
       throw new Error("A room command is required.");
+    if (typeof body.commandId !== "string" || !body.commandId.trim() || body.commandId.length > 120)
+      throw new Error("A valid commandId is required.");
 
     const result = await executeRoomCommand(
       getRoomRepository(),
@@ -55,7 +61,8 @@ export async function POST(request: Request, context: RouteContext) {
         code,
         token: body.token,
         expectedRevision: body.expectedRevision,
-        command: body.command,
+        commandId: body.commandId,
+        command: validateRoomCommand(body.command),
       },
       {
         runBotsAfterHumanOrders: true,

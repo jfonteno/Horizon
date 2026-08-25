@@ -1,5 +1,7 @@
 import type { GameState, PlayerController } from "../types";
-import { projectPrivateGame } from "./private-view";
+import { factionLibrary } from "../factions";
+import { mapLibrary } from "../maps";
+import { projectPrivateGame, projectSpectatorGame } from "./private-view";
 import type {
   AuthenticatedRoomSeat,
   RoomMode,
@@ -35,6 +37,18 @@ function cloneController(controller: PlayerController): PlayerController {
 }
 
 function validateGame(game: GameState) {
+  if (!mapLibrary[game.mapId]) throw new Error(`Map ${game.mapId} is not installed on this server.`);
+  const missingFaction = game.players.find((player) => !factionLibrary[player.faction]);
+  if (missingFaction) throw new Error(`Faction ${missingFaction.faction} is not installed on this server.`);
+  for (const required of game.contentPacks || []) {
+    const installedVersion = mapLibrary[game.mapId]?.sourcePack === required.id
+      ? mapLibrary[game.mapId].sourcePackVersion
+      : game.players
+          .map((player) => factionLibrary[player.faction])
+          .find((definition) => definition?.sourcePack === required.id)?.sourcePackVersion;
+    if (installedVersion !== required.version)
+      throw new Error(`Content pack ${required.id}@${required.version} is required by this game.`);
+  }
   if (game.players.length < 4 || game.players.length > 6)
     throw new Error("Network rooms support four to six civilizations.");
   if (game.players.some((player, index) => player.id !== index))
@@ -49,21 +63,30 @@ function validateGame(game: GameState) {
  * Older 0.13 room payloads predate RoomMode and explicit seat controllers.
  * Normalize them when read so existing local rooms continue to work.
  */
-function normalizeStoredRoom(room: StoredRoom): StoredRoom {
+export function normalizeStoredRoom(room: StoredRoom): StoredRoom {
   const candidate = room as StoredRoom & {
+    schemaVersion?: number;
     mode?: RoomMode;
+    events?: StoredRoom["events"];
+    commandReceipts?: StoredRoom["commandReceipts"];
     seats: Array<
-      StoredRoom["seats"][number] & { controller?: PlayerController }
+      StoredRoom["seats"][number] & { controller?: PlayerController; ready?: boolean }
     >;
   };
 
+  candidate.schemaVersion ||= 1;
   candidate.mode ||= "local";
+  candidate.events ||= [];
+  candidate.commandReceipts ||= [];
   candidate.seats = candidate.seats.map((seat) => ({
     ...seat,
     controller: cloneController(
       seat.controller ?? candidate.game.players[seat.playerId]?.controller ?? { kind: "human" },
     ),
+    ready: seat.ready ?? (seat.controller?.kind === "bot"),
   }));
+
+  candidate.schemaVersion = 2;
 
   return candidate;
 }
@@ -84,7 +107,10 @@ function summary(room: StoredRoom): RoomSummary {
       controller: cloneController(seat.controller),
       displayName: seat.displayName,
       claimed: seat.controller.kind === "bot" || Boolean(seat.tokenHash),
+      ready: seat.controller.kind === "bot" || seat.ready,
+      ordersSubmitted: room.game.orderProtocol.submissions.some((submission) => submission.playerId === seat.playerId),
     })),
+    recentEvents: room.events.slice(-30),
     updatedAt: room.updatedAt,
   };
 }
@@ -97,7 +123,10 @@ function sessionGame(room: StoredRoom, playerId: number | undefined, host: boole
 }
 
 export class MemoryRoomRepository implements RoomRepository {
+  readonly kind = "memory" as const;
   private rooms = new Map<string, StoredRoom>();
+
+  async health() { return { ok: true, detail: "ephemeral" }; }
 
   async get(code: string) {
     const room = this.rooms.get(normalizeRoomCode(code));
@@ -107,6 +136,13 @@ export class MemoryRoomRepository implements RoomRepository {
   async put(room: StoredRoom) {
     const normalized = normalizeStoredRoom(structuredClone(room));
     this.rooms.set(normalized.code, normalized);
+  }
+
+  async compareAndSwap(room: StoredRoom, expectedRevision: number) {
+    const current = this.rooms.get(normalizeRoomCode(room.code));
+    if (!current || current.revision !== expectedRevision) return false;
+    await this.put(room);
+    return true;
   }
 }
 
@@ -136,9 +172,10 @@ export class RoomService {
     const now = new Date().toISOString();
 
     const room: StoredRoom = {
+      schemaVersion: 2,
       code,
       mode,
-      status: game.result ? "complete" : "active",
+      status: game.result ? "complete" : mode === "network" ? "lobby" : "active",
       revision: 1,
       game: structuredClone(game),
       hostTokenHash,
@@ -153,6 +190,7 @@ export class RoomService {
             displayName: player.name,
             tokenHash: null,
             joinedAt: null,
+            ready: true,
           };
         }
 
@@ -164,8 +202,17 @@ export class RoomService {
             : null,
           tokenHash: isHostSeat ? hostTokenHash : null,
           joinedAt: isHostSeat ? now : null,
+          ready: false,
         };
       }),
+      events: [{
+        id: `room-created-${now}`,
+        at: now,
+        revision: 1,
+        type: "system",
+        message: mode === "network" ? "Network lobby created." : "Local room created.",
+      }],
+      commandReceipts: [],
       createdAt: now,
       updatedAt: now,
     };
@@ -201,9 +248,21 @@ export class RoomService {
       displayName.trim().slice(0, 40) || `Player ${playerId + 1}`;
     seat.tokenHash = await hashRoomToken(token);
     seat.joinedAt = new Date().toISOString();
+    seat.ready = false;
+    const expectedRevision = room.revision;
+    room.revision++;
     room.updatedAt = seat.joinedAt;
+    room.events.push({
+      id: `seat-${playerId}-${room.revision}`,
+      at: room.updatedAt,
+      revision: room.revision,
+      type: "seat",
+      playerId,
+      message: `${seat.displayName} claimed ${room.game.players[playerId].name}.`,
+    });
 
-    await this.repository.put(room);
+    if (!(await this.repository.compareAndSwap(room, expectedRevision)))
+      throw new Error("The room changed while that seat was being claimed. Refresh and retry.");
 
     return {
       code: room.code,
@@ -240,6 +299,20 @@ export class RoomService {
       revision: room.revision,
       summary: summary(room),
       game: sessionGame(room, playerId, isHost),
+    };
+  }
+
+  async spectate(code: string): Promise<RoomSession> {
+    const room = await this.requireRoom(code);
+    if (room.mode !== "network")
+      throw new Error("Only network rooms provide a spectator view.");
+    return {
+      code: room.code,
+      token: "",
+      role: "spectator",
+      revision: room.revision,
+      summary: summary(room),
+      game: projectSpectatorGame(room.game),
     };
   }
 
@@ -285,7 +358,8 @@ export class RoomService {
     room.status = game.result ? "complete" : "active";
     room.updatedAt = new Date().toISOString();
 
-    await this.repository.put(room);
+    if (!(await this.repository.compareAndSwap(room, expectedRevision)))
+      throw new Error("The room changed while this state was being published. Resume and retry.");
 
     return {
       code: room.code,
@@ -337,6 +411,8 @@ export class RoomService {
     const code = normalizeRoomCode(rawCode);
     const raw = await this.repository.get(code);
     if (!raw) throw new Error("No Horizon room uses that invitation code.");
-    return normalizeStoredRoom(raw);
+    const room = normalizeStoredRoom(raw);
+    validateGame(room.game);
+    return room;
   }
 }

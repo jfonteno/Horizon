@@ -1,4 +1,4 @@
-import { factionLibrary } from "../factions";
+import { factionLibrary, factionRules } from "../factions";
 import type { GameState, PlayerState, Resource, SecretOrder } from "../types";
 import { tributeCosts } from "../rules/economy";
 import type { BotOpponentModel, BotProfile, BotStrategicPlan } from "./types";
@@ -50,11 +50,11 @@ function projectedContributionCapacity(game: GameState, player: PlayerState) {
 }
 
 function doctrine(player: PlayerState) {
-  if (player.faction === "varkesh") return "Concentrate force, deter opportunistic attacks, and capture only when the LP and production swing exceeds retaliation risk.";
-  if (player.faction === "helix") return "Sequence Economy and Resource infrastructure around efficient research, then export knowledge without sacrificing Gate reserves.";
-  if (player.faction === "foundry") return "Build a diversified industrial base early, convert Material advantages into Habitats, and route surplus into the Gate coalition.";
-  if (player.faction === "aurelians") return "Convert Political Capital into missing Gate inputs, establish Trade Agreements early, and coordinate Labor-backed resource routes.";
-  if (player.faction === "meridian") return "Create liquidity through trade and Market access, broker complementary specialists, and prevent resource bottlenecks.";
+  if (factionRules(player) === "varkesh") return "Concentrate force, deter opportunistic attacks, and capture only when the LP and production swing exceeds retaliation risk.";
+  if (factionRules(player) === "helix") return "Sequence Economy and Resource infrastructure around efficient research, then export knowledge without sacrificing Gate reserves.";
+  if (factionRules(player) === "foundry") return "Build a diversified industrial base early, convert Material advantages into Habitats, and route surplus into the Gate coalition.";
+  if (factionRules(player) === "aurelians") return "Convert Political Capital into missing Gate inputs, establish Trade Agreements early, and coordinate Labor-backed resource routes.";
+  if (factionRules(player) === "meridian") return "Create liquidity through trade and Market access, broker complementary specialists, and prevent resource bottlenecks.";
   return "Reveal deliberately, settle production gaps quickly, and monetize information while preserving the coalition's resource diversity.";
 }
 
@@ -122,11 +122,11 @@ export function strategicOrderModifier(game: GameState, playerId: number, order:
     reasons.push("Four-Turn production forecast values early recurring output");
   }
   if (order.kind === "technology") {
-    const preferred = player.faction === "varkesh" ? ["Military"] :
-      player.faction === "helix" ? ["Economy", "Resource"] :
-      player.faction === "foundry" ? ["Resource", "Exploration"] :
-      player.faction === "aurelians" ? ["Economy", "Exploration"] :
-      player.faction === "meridian" ? ["Economy", "Policy"] : ["Exploration", "Policy", "Resource"];
+    const preferred = factionRules(player) === "varkesh" ? ["Military"] :
+      factionRules(player) === "helix" ? ["Economy", "Resource"] :
+      factionRules(player) === "foundry" ? ["Resource", "Exploration"] :
+      factionRules(player) === "aurelians" ? ["Economy", "Exploration"] :
+      factionRules(player) === "meridian" ? ["Economy", "Policy"] : ["Exploration", "Policy", "Resource"];
     if (preferred.includes(order.branch)) { score += 22; reasons.push("Faction doctrine identifies this as a compounding Technology branch"); }
     if (plan.gateEmergency && !["Economy", "Resource"].includes(order.branch)) score -= 28;
   }

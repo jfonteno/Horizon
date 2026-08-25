@@ -8,13 +8,13 @@ import {
   civilianLibrary,
   economicSalvage,
   evaluateLegacy,
-  forwardScan,
   longRangeSurvey,
   moveCivilian,
+  negotiationSurvey,
   prospect,
   surveyExchange,
 } from "../../game";
-import type { GameState, Resource, TradeBundle } from "../../game";
+import type { GameState, TradableResource, TradeBundle } from "../../game";
 import ShipIcon from "./ShipIcon";
 
 const zero = (): TradeBundle => ({
@@ -49,8 +49,8 @@ export default function FactionOperations({
   const nonMeridian = game.players.filter((x) => x.id !== p.id),
     [partyA, setPartyA] = useState(nonMeridian[0]?.id || 0),
     [partyB, setPartyB] = useState(nonMeridian[1]?.id || 0),
-    [aResource, setAResource] = useState<Resource>("material"),
-    [bResource, setBResource] = useState<Resource>("currency"),
+    [aResource, setAResource] = useState<TradableResource>("material"),
+    [bResource, setBResource] = useState<TradableResource>("currency"),
     [aAmount, setAAmount] = useState(1),
     [bAmount, setBAmount] = useState(1);
   const unit = units.find((u) => u.id === selectedUnit) || units[0],
@@ -82,7 +82,7 @@ export default function FactionOperations({
     run((g) => brokerTrade(g, p.id, partyA, partyB, a, b));
   }
   const unsold = p.privateSurveys.filter(
-    (s) => !game.hexes.find((h) => h.id === s.hexId)?.revealed,
+    (s) => (s.tradableTurn === undefined || s.tradableTurn === game.turn) && !game.hexes.find((h) => h.id === s.hexId)?.revealed,
   );
   return (
     <>
@@ -156,12 +156,15 @@ export default function FactionOperations({
       )}
       {p.faction === "farbound" && (
         <>
-          {!negotiationOnly && <button
+          <button
             className="wide faction-button"
-            onClick={() => run((g) => forwardScan(g, p.id, g.selected))}
+            disabled={p.negotiationSurveyUsedTurn === game.turn}
+            onClick={() => run((g) => negotiationSurvey(g, p.id, g.selected))}
           >
-            Forward scan selected adjacent hex
-          </button>}
+            {p.negotiationSurveyUsedTurn === game.turn
+              ? "Negotiation survey gathered"
+              : "Survey selected unrevealed hex"}
+          </button>
           <div className="private-intel">
             <h4>Private survey archive</h4>
             {p.privateSurveys.length ? (
@@ -241,7 +244,7 @@ export default function FactionOperations({
               Gives
               <select
                 value={aResource}
-                onChange={(e) => setAResource(e.target.value as Resource)}
+                onChange={(e) => setAResource(e.target.value as TradableResource)}
               >
                 {["material", "currency", "research"].map((r) => (
                   <option key={r}>{r}</option>
@@ -273,7 +276,7 @@ export default function FactionOperations({
               Gives
               <select
                 value={bResource}
-                onChange={(e) => setBResource(e.target.value as Resource)}
+                onChange={(e) => setBResource(e.target.value as TradableResource)}
               >
                 {["material", "currency", "research"].map((r) => (
                   <option key={r}>{r}</option>

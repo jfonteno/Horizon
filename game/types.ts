@@ -56,6 +56,8 @@ export type PrivateSurvey = {
   hexId: string;
   kind: HexKind;
   surveyedTurn: number;
+  /** Negotiation intel can be exchanged only on this Turn. Long-range surveys remain archived. */
+  tradableTurn?: number;
   soldTo: number[];
 };
 
@@ -75,7 +77,6 @@ export type SecretOrder =
       unitId: string;
       destination: string;
     }
-  | { id: string; kind: "forwardScan"; hexId: string }
   | {
       id: string;
       kind: "longRangeSurvey";
@@ -284,6 +285,7 @@ export type PlayerState = {
   id: number;
   controller: PlayerController;
   faction: import("./factions/types").FactionId;
+  rulesProfile?: import("./factions/types").CoreFactionRules;
   name: string;
   color: string;
   resources: Record<Resource, number>;
@@ -307,13 +309,17 @@ export type PlayerState = {
   gloryAwards?: { turn: number; opponents: number[] };
   diplomacy: PlayerDiplomacy;
   privateSurveys: PrivateSurvey[];
+  negotiationSurveyUsedTurn?: number;
+  /** Retained for loading pre-0.17.1 saves. */
   surveyUsedTurn?: number;
+  /** Retained for loading pre-0.17.1 saves. */
   forwardScanUsedTurn?: number;
 };
 
 export type GameState = {
   schemaVersion: number;
   mapId: import("./maps/types").MapId;
+  contentPacks?: { id: string; version: string }[];
   themeId: import("./themes/types").ThemeId;
   seed: number;
   players: PlayerState[];

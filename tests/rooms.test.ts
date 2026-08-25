@@ -73,15 +73,16 @@ test("only hosts publish room snapshots and stale revisions are rejected", async
   );
   const host = await service.create(game, "Host");
   const player = await service.join(host.code, 2, "Builder");
+  const currentHost = await service.resume(host.code, host.token);
   const updated = structuredClone(game);
   updated.gate = 1;
   const saved = await service.save(
     host.code,
     host.token,
-    host.revision,
+    currentHost.revision,
     updated,
   );
-  assert.equal(saved.revision, 2);
+  assert.equal(saved.revision, currentHost.revision + 1);
   assert.equal(saved.game.gate, 1);
   await assert.rejects(() =>
     service.save(host.code, host.token, host.revision, updated),

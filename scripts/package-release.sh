@@ -12,7 +12,8 @@ rm -f "${archive}"
   cd "${project_root}"
   zip -q -r "${archive}" . \
     -x 'node_modules/*' 'dist/*' '.next/*' '.sites-runtime/*' \
-       '.wrangler/*' '.git/*' 'releases/*' '*.log'
+       '.wrangler/*' '.git/*' 'releases/*' 'data/*' 'backups/*' \
+       '.env' '.env.local' '*.log' '*.tsbuildinfo'
 )
 unzip -tq "${archive}"
 echo "${archive}"

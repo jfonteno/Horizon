@@ -547,6 +547,19 @@ export const civilizationLegacy: Record<
   ],
 };
 
+export function civilizationObjectives(player: PlayerState) {
+  const inherited = civilizationLegacy[player.faction];
+  if (inherited) return inherited;
+  const definition = factionLibrary[player.faction];
+  return (definition?.objectives || []).map((condition, index) => ({
+    id: `pack-${player.faction}-${index + 1}`,
+    name: condition.split(":")[0] || `Civilization Objective ${index + 1}`,
+    condition,
+    lp: index + 3,
+    automatic: false,
+  }));
+}
+
 export function emptyLegacyMetrics(): PlayerLegacyMetrics {
   return {
     habitatsEstablished: [0, 0, 0, 0],
@@ -767,7 +780,7 @@ export function evaluateLegacy(game: GameState) {
     }
   }
   for (const p of game.players)
-    for (const objective of civilizationLegacy[p.faction].filter(
+    for (const objective of civilizationObjectives(p).filter(
       (o) => o.automatic && !p.civilizationClaims.includes(o.id),
     ))
       if (civilizationSatisfied(game, p, objective.id)) {
@@ -1267,7 +1280,7 @@ export function manualClaimCivilization(
   id: string,
 ) {
   const p = game.players[playerId],
-    o = civilizationLegacy[p.faction].find((x) => x.id === id);
+    o = civilizationObjectives(p).find((x) => x.id === id);
   if (!o || p.civilizationClaims.includes(id)) return false;
   p.civilizationClaims.push(id);
   awardLegacy(game, playerId, "civilization", o.lp, o.name);

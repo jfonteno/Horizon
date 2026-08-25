@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { projectPrivateGame } from "../../game/server/private-view";
+import { projectPrivateGame, projectSpectatorGame } from "../../game/server/private-view";
 import type { GameState } from "../../game/types";
 
 function privateViewFixture() {
@@ -17,6 +17,7 @@ function privateViewFixture() {
         ],
         surveyUsedTurn: 1,
         forwardScanUsedTurn: 1,
+        negotiationSurveyUsedTurn: 1,
       },
       {
         id: 1,
@@ -28,6 +29,7 @@ function privateViewFixture() {
         ],
         surveyUsedTurn: 1,
         forwardScanUsedTurn: 1,
+        negotiationSurveyUsedTurn: 1,
       },
     ],
     hexes: [
@@ -101,6 +103,7 @@ test("private projection hides another civilization's hidden objective and surve
   assert.deepEqual(view.players[1].privateSurveys, []);
   assert.equal(view.players[1].surveyUsedTurn, undefined);
   assert.equal(view.players[1].forwardScanUsedTurn, undefined);
+  assert.equal(view.players[1].negotiationSurveyUsedTurn, undefined);
 
   assert.equal(view.players[0].hiddenLegacy[1]?.selected, "h1-frontier");
   assert.equal(view.players[0].privateSurveys[0]?.hexId, "0-1");
@@ -137,4 +140,15 @@ test("sealed Orders and pending Labor are visible only to the owning player", ()
 test("selected carrier state cannot leak another player's selected unit", () => {
   const view = projectPrivateGame(privateViewFixture(), 0);
   assert.deepEqual(view.selectedCarrierIds, ["c0"]);
+});
+
+test("spectator projection strips all private military and diplomacy planning", () => {
+  const view = projectSpectatorGame(privateViewFixture());
+  assert.deepEqual(view.players.map((player) => player.hiddenLegacy), [{}, {}]);
+  assert.deepEqual(view.players.map((player) => player.privateSurveys), [[], []]);
+  assert.deepEqual(view.orderProtocol.submissions, []);
+  assert.deepEqual(view.pendingLabor, []);
+  assert.deepEqual(view.proposals, []);
+  assert.deepEqual(view.selectedCarrierIds, []);
+  assert.equal(view.hexes.find((hex) => hex.id === "0-1")?.kind, "empty");
 });

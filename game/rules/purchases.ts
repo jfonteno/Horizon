@@ -5,6 +5,7 @@ import type {
   SecretOrder,
   TechnologyBranch,
 } from "../types";
+import { factionRules } from "../factions";
 import { availableCivilianType, civilianLibrary } from "./faction-operations";
 import { technologyCost } from "./diplomacy";
 import { availableCarrierTypes, carrierCost, carrierLibrary } from "./fleet";
@@ -67,7 +68,7 @@ export function constructionQuote(
     return unavailable("This Habitat already used its Construction Order.");
 
   if (construction.type === "module") {
-    const cost = { material: 3, currency: 2, labor: player.faction === "foundry" ? 0 : 2 };
+    const cost = { material: 3, currency: 2, labor: factionRules(player) === "foundry" ? 0 : 2 };
     return { label: "Habitat Module", cost, available: true };
   }
   if (construction.type === "upgrade") {
@@ -84,7 +85,7 @@ export function constructionQuote(
     const cap = habitat.tier === "Outpost" ? 1 : habitat.tier === "Colony" ? 2 : 3;
     const cost = construction.center === "defense"
       ? { material: 2, currency: 1, labor: 1 }
-      : player.faction === "helix" && construction.center === "research"
+      : factionRules(player) === "helix" && construction.center === "research"
         ? { material: 1, currency: 1, labor: 1 }
         : centerCosts[construction.center];
     if (habitat.centers.length >= cap) return unavailable("No open Center slots.", cost);

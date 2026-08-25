@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://horizon.local/schemas/content-pack-v1.json",
+  "title": "Horizon Content Pack Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "version", "horizonVersion"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,47}$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[a-zA-Z0-9.-]+)?$" },
+    "horizonVersion": { "const": "0.17" },
+    "description": { "type": "string", "maxLength": 500 },
+    "maps": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "factions": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+  }
+}
