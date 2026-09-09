@@ -2,7 +2,7 @@ import { getNeighbors } from "../engine/geometry";
 import { factionRules } from "../factions";
 import { mapLibrary } from "../maps";
 import type { CarrierState, CarrierType, GameState, HexState, PlayerState } from "../types";
-import { hasAgreement, hasBenefit } from "./diplomacy";
+import { hasAgreement, hasBenefit, hasStationingPermission } from "./diplomacy";
 import { canPay, spend } from "./economy";
 
 export type CarrierDefinition = {
@@ -194,6 +194,8 @@ export function removeCapturedCenter(game: GameState, playerId: number, centerIn
 
 function awardVarkesh(game: GameState, winnerId: number, opponents: number[]): void {
   const winner = game.players[winnerId] as PlayerState & { gloryAwards?: { turn: number; opponents: number[] } };
+  for (const opponent of opponents)
+    if (!winner.legacyMetrics.combatWinsAgainst.includes(opponent)) winner.legacyMetrics.combatWinsAgainst.push(opponent);
   if (factionRules(winner) !== "varkesh") return;
   if (!winner.gloryAwards || winner.gloryAwards.turn !== game.turn) winner.gloryAwards = { turn: game.turn, opponents: [] };
   opponents.forEach(opponent => {
@@ -217,16 +219,76 @@ function carrierForce(game: GameState, ids: string[]) {
   return game.carriers.filter((carrier) => ids.includes(carrier.id));
 }
 
-function hostile(game: GameState, a: number, b: number) {
+function hostile(game: GameState, a: number, b: number, habitatOwner?: number) {
   return (
     a !== b &&
-    !hasBenefit(game, a, b, "defensive")
+    !hasAgreement(game, a, b, "alliance") &&
+    !(hasBenefit(game, a, b, "defensive") && (
+      habitatOwner === a ? hasStationingPermission(game, a, b, "defensive") :
+      habitatOwner === b ? hasStationingPermission(game, b, a, "defensive") :
+      hasStationingPermission(game, a, b, "defensive") || hasStationingPermission(game, b, a, "defensive")
+    ))
   );
 }
 
 function removeForce(game: GameState, force: CarrierState[]) {
   const ids = new Set(force.map((carrier) => carrier.id));
   game.carriers = game.carriers.filter((carrier) => !ids.has(carrier.id));
+}
+
+function destroyUnguardedCivilianVessels(game: GameState, hexId: string) {
+  const militaryOwners = new Set(game.carriers.filter((carrier) => carrier.hex === hexId && carrier.cu > 0).map((carrier) => carrier.owner));
+  const threatened = (owner: number) => [...militaryOwners].some((militaryOwner) => hostile(game, owner, militaryOwner));
+  const destroyed = game.civilianUnits.filter((unit) => unit.hex === hexId && threatened(unit.owner));
+  if (destroyed.length) {
+    game.civilianUnits = game.civilianUnits.filter((unit) => !destroyed.some((candidate) => candidate.id === unit.id));
+    destroyed.forEach((unit) => game.log.unshift(`${game.players[unit.owner].name}'s civilian vessel was destroyed at ${hexId}.`));
+  }
+  for (const player of game.players) {
+    if (!threatened(player.id)) continue;
+    const explorers = (player.explorationVessels || []).filter((unit) => unit.hex === hexId);
+    if (explorers.length) {
+      player.explorationVessels = player.explorationVessels.filter((unit) => unit.hex !== hexId);
+      game.log.unshift(`${player.name}'s unescorted Exploration vessel${explorers.length === 1 ? " was" : "s were"} destroyed at ${hexId}.`);
+      player.explorer = player.explorationVessels[0]?.hex || "";
+    }
+    if (player.colonyShip === hexId) {
+      player.colonyShip = "";
+      game.log.unshift(`${player.name}'s unescorted Colony Ship was destroyed at ${hexId}.`);
+    }
+  }
+}
+
+function queueCombatRedistribution(game: GameState, hexId: string) {
+  const owners = new Set(game.carriers.filter((carrier) => carrier.hex === hexId).map((carrier) => carrier.owner));
+  const habitat = game.hexes.find((hex) => hex.id === hexId && hex.tier);
+  if (habitat?.owner !== undefined) owners.add(habitat.owner);
+  for (const playerId of owners) {
+    const carriers = game.carriers.filter((carrier) => carrier.hex === hexId && carrier.owner === playerId);
+    const stationed = habitat?.owner === playerId ? habitat.combat : 0;
+    const total = stationed + carriers.reduce((sum, carrier) => sum + carrier.cu, 0);
+    if (!carriers.length || total <= carriers.length) continue;
+    game.pendingCombatRedistributions = game.pendingCombatRedistributions.filter((pending) => !(pending.hexId === hexId && pending.playerId === playerId));
+    game.pendingCombatRedistributions.push({ hexId, playerId, total, carrierIds: carriers.map((carrier) => carrier.id), allowStationed: habitat?.owner === playerId });
+  }
+}
+
+export function redistributeCombatUnits(game: GameState, playerId: number, hexId: string, assignments: { carrierId: string; cu: number }[], stationed: number) {
+  const pending = game.pendingCombatRedistributions.find((entry) => entry.playerId === playerId && entry.hexId === hexId);
+  if (!pending) return { ok: false, message: "No post-combat redistribution is pending there." };
+  const carriers = pending.carrierIds.map((id) => game.carriers.find((carrier) => carrier.id === id)).filter((carrier): carrier is CarrierState => !!carrier && carrier.owner === playerId && carrier.hex === hexId);
+  if (assignments.length !== carriers.length || new Set(assignments.map((entry) => entry.carrierId)).size !== carriers.length) return { ok: false, message: "Assign every surviving military vessel exactly once." };
+  if (!Number.isInteger(stationed) || stationed < 0 || (!pending.allowStationed && stationed > 0)) return { ok: false, message: "That stationed CU allocation is invalid." };
+  for (const assignment of assignments) {
+    const carrier = carriers.find((candidate) => candidate.id === assignment.carrierId);
+    if (!carrier || !Number.isInteger(assignment.cu) || assignment.cu < 1 || assignment.cu > carrierLibrary[carrier.type].capacity) return { ok: false, message: "Each vessel needs at least 1 CU and cannot exceed Capacity." };
+  }
+  if (stationed + assignments.reduce((sum, entry) => sum + entry.cu, 0) !== pending.total) return { ok: false, message: `Allocate exactly ${pending.total} surviving CU.` };
+  assignments.forEach((assignment) => { game.carriers.find((carrier) => carrier.id === assignment.carrierId)!.cu = assignment.cu; });
+  const habitat = game.hexes.find((hex) => hex.id === hexId && hex.owner === playerId && hex.tier);
+  if (habitat) habitat.combat = stationed;
+  game.pendingCombatRedistributions = game.pendingCombatRedistributions.filter((entry) => entry !== pending);
+  return { ok: true, message: `Post-combat CU redistribution completed at ${hexId}.` };
 }
 
 function resolveEdgePair(
@@ -270,7 +332,7 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
   const involved = [...owners];
   if (
     involved.length < 2 ||
-    !involved.some((a) => involved.some((b) => hostile(game, a, b)))
+    !involved.some((a) => involved.some((b) => hostile(game, a, b, habitat?.owner)))
   )
     return;
 
@@ -282,7 +344,7 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
         carriers.some(
           (carrier) =>
             carrier.owner !== owner &&
-            hostile(game, carrier.owner, owner) &&
+            hostile(game, carrier.owner, owner, habitat.owner) &&
             carrier.type === "assault",
         )
           ? 1
@@ -326,7 +388,8 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
         hasAgreement(game, involved[a], involved[b], "alliance") ||
         (habitat?.owner !== undefined &&
           (involved[a] === habitat.owner || involved[b] === habitat.owner) &&
-          hasBenefit(game, involved[a], involved[b], "defensive"))
+          hasBenefit(game, involved[a], involved[b], "defensive") &&
+          hasStationingPermission(game, habitat.owner, involved[a] === habitat.owner ? involved[b] : involved[a], "defensive"))
       )
         unite(involved[a], involved[b]);
 
@@ -344,7 +407,7 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
     totalCS: members.reduce((sum, member) => sum + member.totalCS, 0),
   }));
   const coalitionsHostile = (a: typeof coalitionForces[number], b: typeof coalitionForces[number]) =>
-    a.owners.some((ownerA) => b.owners.some((ownerB) => hostile(game, ownerA, ownerB)));
+    a.owners.some((ownerA) => b.owners.some((ownerB) => hostile(game, ownerA, ownerB, habitat?.owner)));
   const participating = coalitionForces.filter((coalition) => coalitionForces.some((other) => other.id !== coalition.id && coalitionsHostile(coalition, other)));
   const strongest = [...participating].sort((a, b) => b.totalCS - a.totalCS || a.id - b.id)[0];
   const oppositionCoalitions = participating.filter((coalition) => coalition.id !== strongest.id && coalitionsHostile(strongest, coalition));
@@ -382,7 +445,7 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
   );
 }
 
-export function resolveSimultaneousCarrierMoves(
+function resolveCarrierMoveStep(
   game: GameState,
   requested: Array<{
     playerId: number;
@@ -443,12 +506,39 @@ export function resolveSimultaneousCarrierMoves(
       carrier.movesRemaining--;
     });
   });
-  new Set(moves.map((move) => move.destination)).forEach((destination) =>
+  const destinations = new Set(moves.map((move) => move.destination));
+  const combatDestinations = new Set([...destinations].filter((destination) => {
+    const habitat = game.hexes.find((hex) => hex.id === destination && hex.tier);
+    const owners = new Set(game.carriers.filter((carrier) => carrier.hex === destination).map((carrier) => carrier.owner));
+    if (habitat?.owner !== undefined) owners.add(habitat.owner);
+    return [...owners].some((a) => [...owners].some((b) => hostile(game, a, b, habitat?.owner)));
+  }));
+  destinations.forEach((destination) =>
     resolveSimultaneousHex(game, destination),
   );
+  destinations.forEach((destination) =>
+    destroyUnguardedCivilianVessels(game, destination),
+  );
+  combatDestinations.forEach((destination) => queueCombatRedistribution(game, destination));
   game.selectedCarrierIds = game.selectedCarrierIds.filter((id) =>
     game.carriers.some((carrier) => carrier.id === id),
   );
+}
+
+export function resolveSimultaneousCarrierMoves(
+  game: GameState,
+  requested: Array<{ playerId: number; carrierIds: string[]; destination: string; path?: string[] }>,
+) {
+  const pending = requested.map((order) => ({ ...order, steps: order.path?.length ? [...order.path] : [order.destination] }));
+  const maximum = Math.max(0, ...pending.map((order) => order.steps.length));
+  for (let step = 0; step < maximum; step++) {
+    const batch = pending.filter((order) => order.steps[step]).map((order) => ({
+      playerId: order.playerId,
+      carrierIds: order.carrierIds,
+      destination: order.steps[step],
+    }));
+    if (batch.length) resolveCarrierMoveStep(game, batch);
+  }
 }
 
 function resolveCombat(game: GameState, attackerId: number, destination: string): void {

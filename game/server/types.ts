@@ -12,6 +12,7 @@ export type RoomSeat = {
   tokenHash: string | null;
   joinedAt: string | null;
   ready: boolean;
+  selectedFaction: string | null;
 };
 
 export type RoomEvent = {
@@ -30,6 +31,20 @@ export type RoomCommandReceipt = {
   message: string;
 };
 
+export type RoomAuditEntry = {
+  sequence: number;
+  commandId: string;
+  playerId: number;
+  commandKind: string;
+  commandLabel: string;
+  command: unknown;
+  acceptedAt: string;
+  revision: number;
+  previousHash: string;
+  stateHash: string;
+  entryHash: string;
+};
+
 export type StoredRoom = {
   schemaVersion: number;
   code: string;
@@ -37,10 +52,18 @@ export type StoredRoom = {
   status: RoomStatus;
   revision: number;
   game: GameState;
+  initialGame?: GameState;
+  availableFactions: string[];
   hostTokenHash: string;
   seats: RoomSeat[];
   events: RoomEvent[];
   commandReceipts: RoomCommandReceipt[];
+  auditStartRevision?: number;
+  initialStateHash?: string;
+  audit: RoomAuditEntry[];
+  turnTimerSeconds: number | null;
+  turnDeadlineAt: string | null;
+  turnTimerPausedRemainingMs: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -53,10 +76,24 @@ export type RoomSummary = {
   turn: number;
   era: number;
   activePlayerId: number;
+  turnTimerSeconds: number | null;
+  turnDeadlineAt: string | null;
+  availableFactions: Array<{
+    id: string;
+    name: string;
+    role: string;
+    color: string;
+    logo?: string;
+    blurb?: string;
+    lore?: string[];
+    abilities?: Array<{ name: string; summary: string; unlock?: string }>;
+    objectives?: string[];
+    homeProduction?: string;
+  }>;
   seats: Array<{
     playerId: number;
     civilization: string;
-    faction: string;
+    faction: string | null;
     controller: PlayerController;
     displayName: string | null;
     claimed: boolean;

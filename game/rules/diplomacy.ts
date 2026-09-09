@@ -30,6 +30,19 @@ export const agreementNames: Record<AgreementType, string> = {
   alliance: "Alliance",
 };
 
+export function hasStationingPermission(game: GameState, hostId: number, guestId: number, kind: "defensive" | "envoy") {
+  return game.stationingPermissions.some((permission) => permission.hostId === hostId && permission.guestId === guestId && permission.kind === kind);
+}
+
+export function setStationingPermission(game: GameState, hostId: number, guestId: number, kind: "defensive" | "envoy", allowed: boolean) {
+  if (hostId === guestId || !game.players[guestId]) return { ok: false, message: "Choose another civilization." };
+  if (kind === "defensive" && !hasBenefit(game, hostId, guestId, "defensive")) return { ok: false, message: "A Defensive Pact or Alliance is required." };
+  if (kind === "envoy" && factionRules(game.players[guestId]) !== "aurelians") return { ok: false, message: "Only Aurelian Envoys require this permission." };
+  game.stationingPermissions = game.stationingPermissions.filter((permission) => !(permission.hostId === hostId && permission.guestId === guestId && permission.kind === kind));
+  if (allowed) game.stationingPermissions.push({ hostId, guestId, kind });
+  return { ok: true, message: `${game.players[guestId].name} ${allowed ? "may now" : "may no longer"} ${kind === "envoy" ? "host Envoys at" : "co-station forces in"} ${game.players[hostId].name} Habitats.` };
+}
+
 export const agreementRules: Record<
   AgreementType,
   { policy: number; cost: number; effect: string }
@@ -60,13 +73,13 @@ export const agreementRules: Record<
     policy: 3,
     cost: 2,
     effect:
-      "Co-stationed forces combine with the Habitat owner's defense as one deterministic coalition.",
+      "With the Habitat owner's permission, co-stationed forces combine with its defense as one deterministic coalition.",
   },
   alliance: {
     policy: 3,
     cost: 3,
     effect:
-      "Includes Trade, Open Borders, Defensive Pact, non-hostility, and combined coalition combat.",
+      "Includes Trade, Open Borders, Defensive Pact, non-hostility, and permission-based coalition combat.",
   },
 };
 
@@ -254,7 +267,7 @@ function availableLabor(game: GameState, playerId: number): number {
   const committed = game.pendingLabor
     .filter((change) => change.playerId === playerId && change.amount < 0)
     .reduce((sum, change) => sum - change.amount, 0);
-  return Math.max(0, game.players[playerId].laborCap - 1 - committed);
+  return Math.max(0, game.players[playerId].laborCap - committed);
 }
 
 function canProvide(
@@ -523,6 +536,14 @@ export function resolveProposal(
       from.legacyMetrics.tradePartners[era].push(to.id);
     if (!to.legacyMetrics.tradePartners[era].includes(from.id))
       to.legacyMetrics.tradePartners[era].push(from.id);
+    from.legacyMetrics.tradeCount[era]++;
+    to.legacyMetrics.tradeCount[era]++;
+    if (bundleTotal(proposal.offer) > 0 && !from.legacyMetrics.givenTradePartners[era].includes(to.id)) from.legacyMetrics.givenTradePartners[era].push(to.id);
+    if (bundleTotal(proposal.request) > 0 && !to.legacyMetrics.givenTradePartners[era].includes(from.id)) to.legacyMetrics.givenTradePartners[era].push(from.id);
+    if (!from.legacyMetrics.directTradePartners.includes(to.id)) from.legacyMetrics.directTradePartners.push(to.id);
+    if (!to.legacyMetrics.directTradePartners.includes(from.id)) to.legacyMetrics.directTradePartners.push(from.id);
+    from.legacyMetrics.directTradeCount++;
+    to.legacyMetrics.directTradeCount++;
     const ordinary = (bundle: TradeBundle) =>
       bundle.material + bundle.currency + bundle.research;
     from.legacyMetrics.receivedTradeValue[era] +=

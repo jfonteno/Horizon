@@ -8,6 +8,7 @@ import {
   constructionAvailable,
   formatCost,
   recruitCombatUnits,
+  redistributeCombatUnits,
   taskForceSummary,
   totalCombatUnits,
   transferCombatUnit,
@@ -36,6 +37,20 @@ export function FleetCommandPanel({ game, commit, flash }: SharedProps) {
   const here = carriers.filter(carrier => carrier.hex === game.selected);
   const selected = carriers.filter(carrier => game.selectedCarrierIds.includes(carrier.id));
   const summary = taskForceSummary(game, game.selectedCarrierIds);
+  const redistribution = game.pendingCombatRedistributions.find((pending) => pending.playerId === player.id);
+
+  function assignSurvivors() {
+    if (!redistribution) return;
+    const assignments: { carrierId: string; cu: number }[] = [];
+    let remaining = redistribution.total;
+    for (const carrierId of redistribution.carrierIds) {
+      const carrier = game.carriers.find((candidate) => candidate.id === carrierId)!;
+      const raw = window.prompt(`${carrierLibrary[carrier.type].name}: assign 1 to ${carrierLibrary[carrier.type].capacity} CU. ${remaining} remain.`, String(carrier.cu));
+      if (raw === null) return;
+      assignments.push({ carrierId, cu: Number(raw) }); remaining -= Number(raw);
+    }
+    run(game, commit, flash, (draft) => redistributeCombatUnits(draft, player.id, redistribution.hexId, assignments, redistribution.allowStationed ? remaining : 0));
+  }
 
   function toggle(id: string) {
     const draft = structuredClone(game);
@@ -62,6 +77,7 @@ export function FleetCommandPanel({ game, commit, flash }: SharedProps) {
   return <>
     <h3>Fleet Operations</h3>
     <p>Select one or more carriers in the same hex to form a task force, then click an adjacent revealed hex. Each CU contributes 1 CS.</p>
+    {redistribution && <div className="hidden-required"><div><b>Post-combat redistribution required</b><span>Allocate {redistribution.total} surviving CU at {redistribution.hexId}.</span></div><button onClick={assignSurvivors}>Assign survivors</button></div>}
     <div className="task-force-readout"><span>Selected task force</span><strong>{summary.carriers} carriers · {summary.cu} CS · {summary.movement} move</strong></div>
     <div className="fleet-list">{carriers.map(carrier => {
       const definition = carrierLibrary[carrier.type], chosen = game.selectedCarrierIds.includes(carrier.id);

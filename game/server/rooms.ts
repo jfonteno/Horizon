@@ -1,7 +1,11 @@
 import type { GameState, PlayerController } from "../types";
-import { factionLibrary } from "../factions";
+import { factionIds, factionLibrary } from "../factions";
 import { mapLibrary } from "../maps";
 import { projectPrivateGame, projectSpectatorGame } from "./private-view";
+import { initializeRoomAudit } from "./audit";
+import { reconcileExpiredTurnTimer } from "./turn-timer";
+import { finalEra, totalTurns } from "../rules/format";
+import { emptyLegacyMetrics } from "../rules/legacy";
 import type {
   AuthenticatedRoomSeat,
   RoomMode,
@@ -55,8 +59,8 @@ function validateGame(game: GameState) {
     throw new Error("Player seats must use consecutive identifiers.");
   if (game.active < 0 || game.active >= game.players.length)
     throw new Error("The active civilization is invalid.");
-  if (game.turn < 1 || game.turn > 16 || game.era < 1 || game.era > 4)
-    throw new Error("The Turn or Era is outside the four-Era playtest range.");
+  if (game.turn < 1 || game.turn > totalTurns(game) || game.era < 1 || game.era > finalEra(game))
+    throw new Error("The Turn or Era is outside the selected game format.");
 }
 
 /**
@@ -69,24 +73,60 @@ export function normalizeStoredRoom(room: StoredRoom): StoredRoom {
     mode?: RoomMode;
     events?: StoredRoom["events"];
     commandReceipts?: StoredRoom["commandReceipts"];
+    audit?: StoredRoom["audit"];
+    availableFactions?: StoredRoom["availableFactions"];
+    turnTimerSeconds?: number | null;
+    turnDeadlineAt?: string | null;
+    turnTimerPausedRemainingMs?: number | null;
     seats: Array<
-      StoredRoom["seats"][number] & { controller?: PlayerController; ready?: boolean }
+      StoredRoom["seats"][number] & { controller?: PlayerController; ready?: boolean; selectedFaction?: string | null }
     >;
   };
 
   candidate.schemaVersion ||= 1;
+  candidate.game.format ||= "four-era";
+  if (candidate.game.mapId === "standard-board" && candidate.game.hexes.filter((hex) => hex.kind !== "rift").length === 61)
+    candidate.game.mapId = "standard-board-61";
+  candidate.game.schemaVersion = 15;
+  candidate.game.stationingPermissions ||= [];
+  candidate.game.pendingCombatRedistributions ||= [];
+  candidate.game.hexes = candidate.game.hexes.map((hex) => ({
+    ...hex,
+    kind: hex.kind === "hazard" ? "empty" : hex.kind,
+    originalOwner: hex.originalOwner ?? (hex.owner !== undefined && hex.tier ? hex.owner : undefined),
+  }));
+  candidate.game.players = candidate.game.players.map((player) => {
+    const defaults = emptyLegacyMetrics();
+    return {
+      ...player,
+      eraTributes: [...(player.eraTributes || []), 0, 0, 0, 0, 0].slice(0, 5),
+      legacyMetrics: { ...defaults, ...(player.legacyMetrics || {}) },
+      explorationVessels: player.explorationVessels?.length ? player.explorationVessels : [{
+        id: `exploration-${player.id}-1`, owner: player.id, type: "exploration" as const,
+        hex: player.explorer, readyTurn: candidate.game.turn, movesRemaining: candidate.game.moves?.explorer ?? 1,
+      }],
+    };
+  });
   candidate.mode ||= "local";
   candidate.events ||= [];
   candidate.commandReceipts ||= [];
+  candidate.audit ||= [];
+  candidate.availableFactions ||= [...new Set(candidate.game.players.map((player) => player.faction))];
+  candidate.turnTimerSeconds ??= null;
+  candidate.turnDeadlineAt ??= null;
+  candidate.turnTimerPausedRemainingMs ??= null;
   candidate.seats = candidate.seats.map((seat) => ({
     ...seat,
     controller: cloneController(
       seat.controller ?? candidate.game.players[seat.playerId]?.controller ?? { kind: "human" },
     ),
     ready: seat.ready ?? (seat.controller?.kind === "bot"),
+    selectedFaction: seat.selectedFaction === undefined
+      ? candidate.game.players[seat.playerId]?.faction || null
+      : seat.selectedFaction,
   }));
 
-  candidate.schemaVersion = 2;
+  candidate.schemaVersion = 5;
 
   return candidate;
 }
@@ -100,10 +140,20 @@ function summary(room: StoredRoom): RoomSummary {
     turn: room.game.turn,
     era: room.game.era,
     activePlayerId: room.game.active,
+    turnTimerSeconds: room.turnTimerSeconds,
+    turnDeadlineAt: room.turnDeadlineAt,
+    availableFactions: room.availableFactions.map((id) => {
+      const faction = factionLibrary[id];
+      return faction ? {
+        id, name: faction.name, role: faction.role, color: faction.color, logo: faction.logo,
+        blurb: faction.blurb, lore: faction.lore, abilities: faction.abilities,
+        objectives: faction.objectives, homeProduction: faction.homeProduction,
+      } : { id, name: id, role: "Unavailable content", color: "#718896" };
+    }),
     seats: room.seats.map((seat) => ({
       playerId: seat.playerId,
-      civilization: room.game.players[seat.playerId].name,
-      faction: room.game.players[seat.playerId].faction,
+      civilization: seat.selectedFaction ? factionLibrary[seat.selectedFaction]?.name || seat.selectedFaction : "Faction unselected",
+      faction: seat.selectedFaction,
       controller: cloneController(seat.controller),
       displayName: seat.displayName,
       claimed: seat.controller.kind === "bot" || Boolean(seat.tokenHash),
@@ -171,19 +221,28 @@ export class RoomService {
     const hostTokenHash = await hashRoomToken(token);
     const now = new Date().toISOString();
 
+    const reservedBotFactions = new Set<string>();
     const room: StoredRoom = {
-      schemaVersion: 2,
+      schemaVersion: 5,
       code,
       mode,
       status: game.result ? "complete" : mode === "network" ? "lobby" : "active",
       revision: 1,
       game: structuredClone(game),
+      initialGame: structuredClone(game),
+      availableFactions: [...factionIds],
       hostTokenHash,
       seats: game.players.map((player) => {
         const controller = cloneController(player.controller);
         const isHostSeat = player.id === hostPlayer.id;
 
         if (controller.kind === "bot") {
+          const selectedFaction = !reservedBotFactions.has(player.faction)
+            ? player.faction
+            : factionIds.find((id) => !reservedBotFactions.has(id));
+          if (!selectedFaction)
+            throw new Error("The room does not have enough installed factions for every bot seat.");
+          reservedBotFactions.add(selectedFaction);
           return {
             playerId: player.id,
             controller,
@@ -191,6 +250,7 @@ export class RoomService {
             tokenHash: null,
             joinedAt: null,
             ready: true,
+            selectedFaction,
           };
         }
 
@@ -203,6 +263,7 @@ export class RoomService {
           tokenHash: isHostSeat ? hostTokenHash : null,
           joinedAt: isHostSeat ? now : null,
           ready: false,
+          selectedFaction: mode === "network" ? null : player.faction,
         };
       }),
       events: [{
@@ -213,9 +274,15 @@ export class RoomService {
         message: mode === "network" ? "Network lobby created." : "Local room created.",
       }],
       commandReceipts: [],
+      audit: [],
+      turnTimerSeconds: null,
+      turnDeadlineAt: null,
+      turnTimerPausedRemainingMs: null,
       createdAt: now,
       updatedAt: now,
     };
+
+    await initializeRoomAudit(room);
 
     await this.repository.put(room);
 
@@ -258,7 +325,7 @@ export class RoomService {
       revision: room.revision,
       type: "seat",
       playerId,
-      message: `${seat.displayName} claimed ${room.game.players[playerId].name}.`,
+      message: `${seat.displayName} claimed seat ${playerId + 1}.`,
     });
 
     if (!(await this.repository.compareAndSwap(room, expectedRevision)))
@@ -276,6 +343,7 @@ export class RoomService {
   }
 
   async resume(code: string, token: string): Promise<RoomSession> {
+    await reconcileExpiredTurnTimer(this.repository, normalizeRoomCode(code));
     const room = await this.requireRoom(code);
     const tokenHash = await hashRoomToken(token);
     const isHost = tokenHash === room.hostTokenHash;
@@ -303,6 +371,7 @@ export class RoomService {
   }
 
   async spectate(code: string): Promise<RoomSession> {
+    await reconcileExpiredTurnTimer(this.repository, normalizeRoomCode(code));
     const room = await this.requireRoom(code);
     if (room.mode !== "network")
       throw new Error("Only network rooms provide a spectator view.");
@@ -397,6 +466,13 @@ export class RoomService {
       role: tokenHash === room.hostTokenHash ? "host" : "player",
       playerId: seat.playerId,
     };
+  }
+
+  async authenticateHost(code: string, token: string) {
+    const room = await this.requireRoom(code);
+    if ((await hashRoomToken(token)) !== room.hostTokenHash)
+      throw new Error("Only the room host may access this playtest record.");
+    return room;
   }
 
   async getStoredRoom(code: string) {

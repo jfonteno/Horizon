@@ -13,15 +13,17 @@ import {
   politicalCapital,
   resolveProposal,
   scheduleWithdrawal,
+  setStationingPermission,
 } from "../rules/diplomacy";
 import { marketExchange } from "../rules/economy";
 import {
   brokerTrade,
   economicSalvage,
   negotiationSurvey,
+  setHomeProductionChoice,
   surveyExchange,
 } from "../rules/faction-operations";
-import { removeCapturedCenter, transferCombatUnit } from "../rules/fleet";
+import { redistributeCombatUnits, removeCapturedCenter, transferCombatUnit } from "../rules/fleet";
 import {
   drawHiddenChoices,
   manualClaimCivilization,
@@ -30,10 +32,16 @@ import {
   setHiddenCompleted,
 } from "../rules/legacy";
 import { getBotProfile } from "../../bots";
-import { resolveSecretOrders, submitSecretOrders } from "../rules/orders";
+import { createGame } from "../engine/create-game";
+import { factionLibrary } from "../factions";
+import { beginSecretOrders, resolveSecretOrders, submitSecretOrders } from "../rules/orders";
+import { gateTarget } from "../rules/format";
 import { runPendingBotSeats } from "./bot-seats";
+import { reviewBotDiplomacy } from "../ai/intelligence";
 import { validateRoomCommand, type RoomCommand, type RoomCommandResult } from "./command";
+import { appendRoomAudit } from "./audit";
 import { RoomService } from "./rooms";
+import { clearTurnDeadline, pauseTurnDeadline, reconcileExpiredTurnTimer, resumeTurnDeadline, startTurnDeadline } from "./turn-timer";
 import type { RoomRepository, RoomSession, StoredRoom } from "./types";
 
 export type ExecuteRoomCommandInput = {
@@ -66,8 +74,8 @@ function normalizeCode(code: string) {
   return code.trim().toUpperCase();
 }
 
-function proposalId(game: GameState, actorId: number, kind: string) {
-  const nonce = crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
+function proposalId(game: GameState, actorId: number, kind: string, commandId: string) {
+  const nonce = commandId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "command";
   return `net-${kind}-${game.turn}-${actorId}-${nonce}`;
 }
 
@@ -124,20 +132,37 @@ function executeOnGame(
   game: GameState,
   playerId: number,
   command: RoomCommand,
+  commandId: string,
 ): RoomCommandResult {
   if (game.pendingCenterLoss && command.kind !== "removeCapturedCenter")
     return {
       ok: false,
       message: `${game.players[game.pendingCenterLoss.playerId].name} must finish captured Center losses before further actions.`,
     };
+  if (game.pendingCombatRedistributions.some((pending) => pending.playerId === playerId) && command.kind !== "redistributeCombatUnits")
+    return { ok: false, message: "Complete your post-combat CU redistribution before taking another action." };
+  const hidden = game.players[playerId]?.hiddenLegacy[game.era];
+  if ((game.turn - 1) % 4 === 0 && !hidden?.selected && !["drawHidden", "selectHidden", "removeCapturedCenter"].includes(command.kind))
+    return {
+      ok: false,
+      message: "Select this Era's Hidden Legacy objective before taking other actions.",
+    };
   switch (command.kind) {
     case "setReady":
+    case "selectFaction":
     case "startGame":
     case "pauseGame":
     case "resumeGame":
     case "endGame":
     case "convertSeatToBot":
+    case "convertSeatToHuman":
+    case "resetHumanSeat":
+    case "setSeatReady":
+    case "postHostNotice":
+    case "setTurnTimer":
       return { ok: false, message: "That command changes the room rather than the game." };
+    case "beginOrders":
+      return beginSecretOrders(game);
     case "drawHidden":
       drawHiddenChoices(game, playerId, game.era);
       return { ok: true, message: "Three private Hidden Legacy objectives drawn." };
@@ -172,7 +197,7 @@ function executeOnGame(
     case "proposeTrade": {
       assertOtherPlayer(game, playerId, command.to);
       const proposal: TradeProposal = {
-        id: proposalId(game, playerId, "trade"),
+        id: proposalId(game, playerId, "trade", commandId),
         kind: "trade",
         from: playerId,
         to: command.to,
@@ -187,7 +212,7 @@ function executeOnGame(
     case "proposeAgreement": {
       assertOtherPlayer(game, playerId, command.to);
       const proposal: AgreementProposal = {
-        id: proposalId(game, playerId, "agreement"),
+        id: proposalId(game, playerId, "agreement", commandId),
         kind: "agreement",
         from: playerId,
         to: command.to,
@@ -201,7 +226,7 @@ function executeOnGame(
     case "proposeTechnology": {
       assertOtherPlayer(game, playerId, command.buyer);
       const proposal: TechnologyProposal = {
-        id: proposalId(game, playerId, "technology"),
+        id: proposalId(game, playerId, "technology", commandId),
         kind: "technology",
         seller: playerId,
         buyer: command.buyer,
@@ -245,12 +270,18 @@ function executeOnGame(
     case "economicSalvage":
       return economicSalvage(game, playerId);
 
+    case "setHomeProduction":
+      return setHomeProductionChoice(game, playerId, command.resource);
+
+    case "setStationingPermission":
+      return setStationingPermission(game, playerId, command.guestId, command.permission, command.allowed);
+
     case "negotiationSurvey":
       return negotiationSurvey(game, playerId, command.hexId);
 
     case "transferCombatUnit":
       if (
-        game.orderProtocol.phase !== "orders" ||
+        !["negotiation", "orders"].includes(game.orderProtocol.phase) ||
         game.orderProtocol.submissions.some((submission) => submission.playerId === playerId)
       )
         return { ok: false, message: "CU transfers must be completed before this civilization seals its Orders." };
@@ -284,11 +315,15 @@ function executeOnGame(
 
     case "removeCapturedCenter":
       return removeCapturedCenter(game, playerId, command.centerIndex);
+    case "redistributeCombatUnits":
+      return redistributeCombatUnits(game, playerId, command.hexId, command.assignments, command.stationed);
   }
 }
 
 const roomCommandKinds = new Set([
-  "setReady", "startGame", "pauseGame", "resumeGame", "endGame", "convertSeatToBot",
+  "setReady", "selectFaction", "startGame", "pauseGame", "resumeGame", "endGame", "convertSeatToBot",
+  "convertSeatToHuman", "resetHumanSeat", "setSeatReady", "postHostNotice",
+  "setTurnTimer",
 ]);
 
 function isRoomCommand(command: RoomCommand) {
@@ -313,43 +348,85 @@ function appendRoomEvent(room: StoredRoom, playerId: number, command: RoomComman
   room.events = room.events.slice(-200);
 }
 
+function rebuildLobbyGame(room: StoredRoom) {
+  const selected = room.seats.map((seat) => seat.selectedFaction).filter((id): id is string => Boolean(id));
+  if (new Set(selected).size !== selected.length)
+    throw new Error("Each faction may be selected by only one seat.");
+  const remaining = room.availableFactions.filter((id) => !selected.includes(id));
+  const factions = room.seats.map((seat) => seat.selectedFaction || remaining.shift());
+  if (factions.some((id) => !id || !factionLibrary[id]))
+    throw new Error("The room does not have enough installed factions for every seat.");
+  room.game = createGame(
+    room.seats.length,
+    factions as string[],
+    room.game.mapId,
+    room.game.themeId,
+    room.game.seed,
+    room.seats.map((seat) => seat.controller),
+    room.game.spectatorMode,
+    room.game.format,
+  );
+}
+
 async function executeOnRoom(room: StoredRoom, playerId: number, token: string, command: RoomCommand): Promise<RoomCommandResult> {
   const host = (await hashToken(token)) === room.hostTokenHash;
   const seat = room.seats[playerId];
   switch (command.kind) {
     case "setReady":
       if (room.status !== "lobby") return { ok: false, message: "Readiness can only change in the lobby." };
+      if (command.ready && !seat.selectedFaction) return { ok: false, message: "Choose a faction before marking this seat ready." };
       seat.ready = command.ready;
-      return { ok: true, message: `${seat.displayName || room.game.players[playerId].name} is ${command.ready ? "ready" : "not ready"}.` };
+      return { ok: true, message: `${seat.displayName || `Player ${playerId + 1}`} is ${command.ready ? "ready" : "not ready"}.` };
+    case "selectFaction": {
+      if (room.status !== "lobby") return { ok: false, message: "Factions can only be selected in the lobby." };
+      if (seat.controller.kind !== "human") return { ok: false, message: "Bot factions are managed by the host." };
+      if (seat.ready) return { ok: false, message: "Mark this seat not ready before changing its faction." };
+      if (!room.availableFactions.includes(command.factionId) || !factionLibrary[command.factionId])
+        return { ok: false, message: "That faction is not available in this room." };
+      const occupant = room.seats.find((candidate) => candidate.playerId !== playerId && candidate.selectedFaction === command.factionId);
+      if (occupant) return { ok: false, message: "Another seat has already selected that faction." };
+      seat.selectedFaction = command.factionId;
+      seat.ready = false;
+      rebuildLobbyGame(room);
+      return { ok: true, message: `${seat.displayName || `Player ${playerId + 1}`} selected ${factionLibrary[command.factionId].name}.` };
+    }
     case "startGame": {
       if (!host) return { ok: false, message: "Only the host may start the game." };
       if (room.status !== "lobby") return { ok: false, message: "This room is not waiting in the lobby." };
+      const unselected = room.seats.filter((candidate) => !candidate.selectedFaction);
+      if (unselected.length) return { ok: false, message: `${unselected.length} seat${unselected.length === 1 ? " has" : "s have"} not selected a faction.` };
       const missing = room.seats.filter((candidate) => candidate.controller.kind === "human" && (!candidate.tokenHash || !candidate.ready));
       if (missing.length) return { ok: false, message: `${missing.length} human seat${missing.length === 1 ? " is" : "s are"} not claimed and ready.` };
+      rebuildLobbyGame(room);
+      room.initialGame = structuredClone(room.game);
       room.status = "active";
+      startTurnDeadline(room);
       return { ok: true, message: "All civilizations are ready. The game has begun." };
     }
     case "pauseGame":
       if (!host) return { ok: false, message: "Only the host may pause the game." };
       if (room.status !== "active") return { ok: false, message: "Only an active game can be paused." };
+      pauseTurnDeadline(room);
       room.status = "paused";
       return { ok: true, message: "The host paused the game." };
     case "resumeGame":
       if (!host) return { ok: false, message: "Only the host may resume the game." };
       if (room.status !== "paused") return { ok: false, message: "This game is not paused." };
       room.status = "active";
+      resumeTurnDeadline(room);
       return { ok: true, message: "The host resumed the game." };
     case "endGame": {
       if (!host) return { ok: false, message: "Only the host may end the game." };
       if (room.status === "complete") return { ok: false, message: "This game is already complete." };
       const highest = Math.max(...room.game.players.map((player) => player.lp));
       room.game.result = {
-        gateSucceeded: room.game.gate >= room.game.players.length * 3,
+        gateSucceeded: room.game.gate >= gateTarget(room.game),
         winnerIds: room.game.players.filter((player) => player.lp === highest).map((player) => player.id),
         reason: "The host ended the network playtest. Final standings reflect the latest completed state.",
         finalizedTurn: room.game.turn,
       };
       room.status = "complete";
+      clearTurnDeadline(room);
       return { ok: true, message: "The host ended and archived the game." };
     }
     case "convertSeatToBot": {
@@ -363,9 +440,64 @@ async function executeOnRoom(room: StoredRoom, playerId: number, token: string, 
       target.displayName = getBotProfile(command.profileId)!.name;
       target.tokenHash = null;
       target.ready = true;
-      room.game.players[command.playerId].controller = { kind: "bot", profileId: command.profileId };
-      return { ok: true, message: `${room.game.players[command.playerId].name} is now controlled by ${target.displayName}.` };
+      if (room.status === "lobby" && !target.selectedFaction) {
+        target.selectedFaction = room.availableFactions.find((id) => !room.seats.some((seat) => seat.playerId !== target.playerId && seat.selectedFaction === id)) || null;
+        if (!target.selectedFaction) return { ok: false, message: "No unclaimed faction is available for that bot seat." };
+        rebuildLobbyGame(room);
+      } else room.game.players[command.playerId].controller = { kind: "bot", profileId: command.profileId };
+      return { ok: true, message: `${target.selectedFaction ? factionLibrary[target.selectedFaction]?.name : room.game.players[command.playerId].name} is now controlled by ${target.displayName}.` };
     }
+    case "convertSeatToHuman": {
+      if (!host) return { ok: false, message: "Only the host may return a seat to human control." };
+      if (room.status !== "lobby" && room.status !== "paused") return { ok: false, message: "Seat changes require the lobby or a paused game." };
+      if (command.playerId === playerId) return { ok: false, message: "The host seat is already human-controlled." };
+      const target = room.seats[command.playerId];
+      if (!target) return { ok: false, message: "That seat does not exist." };
+      target.controller = { kind: "human" };
+      target.displayName = null;
+      target.tokenHash = null;
+      target.joinedAt = null;
+      target.ready = false;
+      if (room.status === "lobby") {
+        target.selectedFaction = null;
+        rebuildLobbyGame(room);
+      } else room.game.players[command.playerId].controller = { kind: "human" };
+      return { ok: true, message: `Seat ${command.playerId + 1} is open for a human player.` };
+    }
+    case "resetHumanSeat": {
+      if (!host) return { ok: false, message: "Only the host may reopen a human seat." };
+      if (room.status !== "lobby" && room.status !== "paused") return { ok: false, message: "Pause the game before reopening a seat." };
+      if (command.playerId === playerId) return { ok: false, message: "The active host seat cannot be reopened." };
+      const target = room.seats[command.playerId];
+      if (!target || target.controller.kind !== "human") return { ok: false, message: "That is not a human seat." };
+      target.displayName = null;
+      target.tokenHash = null;
+      target.joinedAt = null;
+      target.ready = false;
+      if (room.status === "lobby") {
+        target.selectedFaction = null;
+        rebuildLobbyGame(room);
+      }
+      return { ok: true, message: `Seat ${command.playerId + 1} was reopened for a new player.` };
+    }
+    case "setSeatReady": {
+      if (!host) return { ok: false, message: "Only the host may override readiness." };
+      if (room.status !== "lobby") return { ok: false, message: "Readiness can only change in the lobby." };
+      const target = room.seats[command.playerId];
+      if (!target || target.controller.kind !== "human" || !target.tokenHash) return { ok: false, message: "Only a claimed human seat can be marked ready." };
+      if (command.ready && !target.selectedFaction) return { ok: false, message: "That player must choose a faction before being marked ready." };
+      target.ready = command.ready;
+      return { ok: true, message: `${target.displayName || room.game.players[command.playerId].name} was marked ${command.ready ? "ready" : "not ready"} by the host.` };
+    }
+    case "postHostNotice":
+      if (!host) return { ok: false, message: "Only the host may post room notices." };
+      return { ok: true, message: `HOST: ${command.message.trim()}` };
+    case "setTurnTimer":
+      if (!host) return { ok: false, message: "Only the host may configure the Turn timer." };
+      if (room.status !== "lobby" && room.status !== "paused") return { ok: false, message: "Pause the game before changing the Turn timer." };
+      room.turnTimerSeconds = command.seconds;
+      clearTurnDeadline(room);
+      return { ok: true, message: command.seconds === null ? "The host disabled the Turn timer." : `The host set the Turn timer to ${Math.round(command.seconds / 60)} minutes.` };
     default:
       return { ok: false, message: "That is not a room lifecycle command." };
   }
@@ -384,6 +516,7 @@ export async function executeRoomCommand(
   options: ExecuteRoomCommandOptions = {},
 ): Promise<ExecuteRoomCommandResult> {
   const code = normalizeCode(input.code);
+  await reconcileExpiredTurnTimer(repository, code);
   const room = await repository.get(code);
   if (!room) throw new Error("No Horizon room uses that invitation code.");
   const playerId = await authenticateHuman(room, input.token);
@@ -406,6 +539,7 @@ export async function executeRoomCommand(
     appendRoomEvent(room, playerId, command, action.message);
     room.commandReceipts.push({ commandId, playerId, revision: room.revision, message: action.message });
     room.commandReceipts = room.commandReceipts.slice(-300);
+    await appendRoomAudit(room, playerId, commandId, command);
     if (!(await repository.compareAndSwap(room, input.expectedRevision)))
       throw new Error("The room changed while this command was being processed. Sync and retry.");
     return { ok: true, message: action.message, session: await new RoomService(repository).resume(code, input.token) };
@@ -414,11 +548,19 @@ export async function executeRoomCommand(
   if (room.status === "complete" || room.game.result) return { ok: false, message: "That Horizon game is complete." };
   if (room.status === "lobby") return { ok: false, message: "The host must start the game before commands are accepted." };
   if (room.status === "paused") return { ok: false, message: "The host paused this game." };
+  const previousTurn = room.game.turn;
   const game = structuredClone(room.game);
-  const action = executeOnGame(game, playerId, command);
+  const action = executeOnGame(game, playerId, command, commandId);
   if (!action.ok) return action;
 
   const botMessages: string[] = [];
+  if (["proposeTrade", "proposeAgreement", "proposeTechnology"].includes(command.kind)) {
+    const recipient = command.kind === "proposeTechnology" ? command.buyer : command.kind === "proposeTrade" || command.kind === "proposeAgreement" ? command.to : -1;
+    if (game.players[recipient]?.controller.kind === "bot") {
+      const review = reviewBotDiplomacy(game, recipient);
+      botMessages.push(...review.messages.map((entry) => `${game.players[recipient].name}: ${entry}`));
+    }
+  }
   if (
     command.kind === "submitOrders" &&
     options.runBotsAfterHumanOrders !== false &&
@@ -442,15 +584,24 @@ export async function executeRoomCommand(
       const result = removeCapturedCenter(game, game.pendingCenterLoss.playerId, 0);
       if (!result.ok) throw new Error(`Bot capture bookkeeping failed: ${result.message}`);
     }
+    for (const pending of [...game.pendingCombatRedistributions]) {
+      if (game.players[pending.playerId].controller.kind !== "bot") continue;
+      const assignments = pending.carrierIds.map((carrierId) => ({ carrierId, cu: game.carriers.find((carrier) => carrier.id === carrierId)?.cu || 1 }));
+      const allocated = assignments.reduce((sum, assignment) => sum + assignment.cu, 0);
+      redistributeCombatUnits(game, pending.playerId, pending.hexId, assignments, pending.allowStationed ? pending.total - allocated : 0);
+    }
   }
 
   room.game = game;
+  if (game.result) clearTurnDeadline(room);
+  else if (!game.pendingCenterLoss && (game.turn !== previousTurn || !room.turnDeadlineAt)) startTurnDeadline(room);
   room.revision++;
   room.status = game.result ? "complete" : "active";
   room.updatedAt = new Date().toISOString();
   appendRoomEvent(room, playerId, command, action.message);
   room.commandReceipts.push({ commandId, playerId, revision: room.revision, message: action.message });
   room.commandReceipts = room.commandReceipts.slice(-300);
+  await appendRoomAudit(room, playerId, commandId, command);
   if (!(await repository.compareAndSwap(room, input.expectedRevision)))
     throw new Error("The room changed while this command was being processed. Sync and retry.");
 

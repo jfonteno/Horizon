@@ -4,8 +4,10 @@ import type { Dispatch, SetStateAction } from "react";
 import {
   availableCarrierTypes,
   availableCivilianType,
+  availableExplorationTypes,
   carrierLibrary,
   civilianLibrary,
+  explorationLibrary,
   constructionQuote,
   formatPurchaseCost,
   projectedOrderBudget,
@@ -93,6 +95,11 @@ export default function BuildPanel({
       construction: { type: "carrier" as const, carrier },
       detail: `Move ${carrierLibrary[carrier].move} · Capacity ${carrierLibrary[carrier].capacity}. ${carrierLibrary[carrier].special}`,
       ship: carrier as Parameters<typeof ShipIcon>[0]["type"],
+    })),
+    ...availableExplorationTypes(game, player.id).map((vessel) => ({
+      group: "Exploration Vessels",
+      construction: { type: "exploration" as const, vessel },
+      detail: `Move ${explorationLibrary[vessel].move}. Public reveal limit ${explorationLibrary[vessel].reveals} per Turn.`,
     })),
   ];
   const civilian = availableCivilianType(game, player.id);

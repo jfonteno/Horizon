@@ -4,6 +4,7 @@ import { mapLibrary } from "../maps";
 import type { CivilianUnitType, GameState, TradableResource, TradeBundle } from "../types";
 import { canPay, spend } from "./economy";
 import { claimHabitatConstruction } from "./fleet";
+import { hasStationingPermission } from "./diplomacy";
 
 export const civilianLibrary: Record<
   CivilianUnitType,
@@ -38,6 +39,14 @@ export const civilianLibrary: Record<
     special: "Privately survey any unrevealed hex once per Turn during Orders.",
   },
 };
+
+export function setHomeProductionChoice(game: GameState, playerId: number, resource: "material" | "currency" | "research") {
+  const player = game.players[playerId], rules = factionRules(player);
+  const allowed = rules === "varkesh" ? ["material", "currency"] : rules === "farbound" ? ["research", "currency"] : [];
+  if (!allowed.includes(resource)) return { ok: false, message: "This faction does not have flexible Homeworld production." };
+  player.homeProductionChoice = resource;
+  return { ok: true, message: `${player.name} will produce ${resource} at its Homeworld next Production Phase.` };
+}
 
 function unitId(game: GameState, owner: number) {
   let i = game.civilianUnits.length + 1;
@@ -115,6 +124,8 @@ export function moveCivilian(
       ok: false,
       message: "Faction vessels require a revealed navigable destination.",
     };
+  if (u.type === "envoy" && target.owner !== undefined && target.owner !== playerId && !hasStationingPermission(game, target.owner, playerId, "envoy"))
+    return { ok: false, message: `${game.players[target.owner].name} must grant Envoy-hosting permission first.` };
   if (!getNeighbors(u.hex, mapLibrary[game.mapId]).includes(destination))
     return {
       ok: false,
@@ -196,7 +207,7 @@ export function negotiationSurvey(game: GameState, playerId: number, hexId: stri
   if (factionRules(p) !== "farbound")
     return { ok: false, message: "Negotiation Survey is a Farbound ability." };
   if (
-    game.orderProtocol.phase !== "orders" ||
+    !["negotiation", "orders"].includes(game.orderProtocol.phase) ||
     game.orderProtocol.submissions.some((submission) => submission.playerId === playerId)
   )
     return {
@@ -329,6 +340,7 @@ export function brokerTrade(
   broker.resources.currency++;
   broker.legacyMetrics.marketCurrencyEarned++;
   broker.legacyMetrics.brokeragePairs.push(`${game.turn}:${pair}`);
+  broker.legacyMetrics.brokerageTransactions++;
   game.log.unshift(
     `${broker.name} brokered a trade between ${pa.name} and ${pb.name}, gaining 1 Currency.`,
   );
@@ -344,8 +356,10 @@ export function economicSalvage(game: GameState, playerId: number) {
       ok: false,
       message: "Economic Salvage requires the Meridian at Economy III.",
     };
-  if (game.hexes.filter((x) => x.owner === playerId).reduce((sum, h) => sum + h.combat, 0) < 4)
-    return { ok: false, message: "Station at least 4 CU across your Habitats to salvage." };
+  const stationed = game.hexes.filter((x) => x.owner === playerId).reduce((sum, h) => sum + h.combat, 0);
+  const fleet = game.carriers.filter((carrier) => carrier.owner === playerId).reduce((sum, carrier) => sum + carrier.cu, 0);
+  if (stationed + fleet < 4)
+    return { ok: false, message: "Control at least 4 CU to salvage." };
   let remaining = 4;
   for (const h of game.hexes.filter(
     (x) => x.owner === playerId && x.combat > 0,
@@ -354,6 +368,17 @@ export function economicSalvage(game: GameState, playerId: number) {
     h.combat -= n;
     remaining -= n;
     if (!remaining) break;
+  }
+  if (remaining) {
+    for (const carrier of game.carriers.filter((candidate) => candidate.owner === playerId).sort((a, b) => a.id.localeCompare(b.id))) {
+      const removed = Math.min(remaining, carrier.cu);
+      carrier.cu -= removed;
+      remaining -= removed;
+      if (!remaining) break;
+    }
+    const destroyed = game.carriers.filter((carrier) => carrier.owner === playerId && carrier.cu === 0);
+    game.carriers = game.carriers.filter((carrier) => carrier.owner !== playerId || carrier.cu > 0);
+    destroyed.forEach(() => game.log.unshift(`${p.name} scrapped an uncrewed military vessel during Economic Salvage.`));
   }
   p.resources.currency++;
   p.legacyMetrics.marketCurrencyEarned++;

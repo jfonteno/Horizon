@@ -1,3 +1,4 @@
+import { getBotProfile } from "../../bots";
 import { getNeighbors } from "../engine/geometry";
 import { factionRules } from "../factions";
 import { mapLibrary } from "../maps";
@@ -56,6 +57,7 @@ import type {
   BotTurnPlan,
 } from "./types";
 import { classifyOpponent, createStrategicPlan, strategicOrderModifier } from "./strategy";
+import { finalEra, gateTarget, totalTurns } from "../rules/format";
 
 const branches: TechnologyBranch[] = ["Military", "Economy", "Policy", "Exploration", "Resource"];
 const centers: CenterType[] = ["material", "currency", "research", "influence", "labor", "defense"];
@@ -102,7 +104,7 @@ function updateBotMemory(game: GameState, playerId: number, profile: BotProfile)
   const averageHabitats = privateGame.players.reduce((sum, player) => sum + privateGame.hexes.filter((hex) => hex.owner === player.id && hex.tier).length, 0) / privateGame.players.length;
   const leaderLP = Math.max(...privateGame.players.map((player) => player.lp));
   const opponents = rawOpponents.map((model) => ({ ...model, archetypes: classifyOpponent(model, averageMilitary, averageHabitats, privateGame.era, leaderLP) }));
-  const target = privateGame.players.length * 3, turnsRemaining = 17 - privateGame.turn;
+  const target = gateTarget(privateGame), turnsRemaining = totalTurns(privateGame) + 1 - privateGame.turn;
   const metaFlags: string[] = [];
   if (profile.behaviors.redTeamNotebook && target - privateGame.gate > turnsRemaining) metaFlags.push("GATE RANSOM RISK: required Tribute pace now exceeds one per remaining Turn.");
   const leaders = [...privateGame.players].sort((a, b) => b.lp - a.lp);
@@ -164,6 +166,20 @@ function reviewDiplomacy(game: GameState, playerId: number, profile: BotProfile,
     decisions.push(`${accept ? "Accepted" : "Rejected"} ${proposal.kind} proposal: ${reason}${result.ok ? "" : `; resolution failed: ${result.message}`}.`);
   }
   return decisions;
+}
+
+/** Review pending proposals addressed to a bot without requiring a new Orders handoff. */
+export function reviewBotDiplomacy(game: GameState, playerId: number) {
+  const player = game.players[playerId];
+  if (!player || player.controller.kind !== "bot")
+    return { ok: false, messages: ["That civilization is not controlled by a bot."] };
+  const profile = getBotProfile(player.controller.profileId);
+  if (!profile)
+    return { ok: false, messages: [`Bot profile '${player.controller.profileId}' is not installed.`] };
+  const memory = updateBotMemory(game, playerId, profile);
+  const messages = reviewDiplomacy(game, playerId, profile, memory);
+  for (const message of messages) game.log.unshift(`${player.name}: ${message}`);
+  return { ok: true, messages };
 }
 
 function initiateDiplomacy(game: GameState, playerId: number, profile: BotProfile, memory: BotMemoryState) {
@@ -752,14 +768,14 @@ function purchaseCandidates(game: GameState, playerId: number, profile: BotProfi
 }
 
 function gateCandidates(game: GameState, playerId: number, profile: BotProfile, plan: BotStrategicPlan) {
-  const player = game.players[playerId], result: BotCandidate[] = [], target = game.players.length * 3, remaining = Math.max(0, target - game.gate);
+  const player = game.players[playerId], result: BotCandidate[] = [], target = gateTarget(game), remaining = Math.max(0, target - game.gate);
   if (!remaining) return result;
-  const turnsRemaining = 17 - game.turn, expectedShare = Math.max(0, 3 - player.tributes), behindPace = remaining / Math.max(1, turnsRemaining);
-  const eraLastTurn = game.turn % 4 === 0, finalPressure = game.era === 4 ? (game.turn - 12) / 4 : 0;
+  const turnsRemaining = totalTurns(game) + 1 - game.turn, expectedShare = Math.max(0, finalEra(game) - 1 - player.tributes), behindPace = remaining / Math.max(1, turnsRemaining);
+  const eraLastTurn = game.turn % 4 === 0, finalPressure = game.era === finalEra(game) ? (game.turn - (finalEra(game) - 1) * 4) / 4 : 0;
   const selected = hiddenCondition(game, playerId), objectiveNeed = selected.includes("tribute");
-  const scheduledGate = target * game.turn / 16;
+  const scheduledGate = target * game.turn / totalTurns(game);
   const gateShortfall = Math.max(0, scheduledGate - game.gate);
-  const count = game.era === 4 ? Math.min(remaining, Math.max(1, plan.personalContributionTarget)) : player.eraTributes[game.era - 1] ? 0 : 1;
+  const count = game.era === finalEra(game) ? Math.min(remaining, Math.max(1, plan.personalContributionTarget)) : player.eraTributes[game.era - 1] ? 0 : 1;
   for (let index = 0; index < count; index++) {
     const order: SecretOrder = { id: `bot-tribute-${index}`, kind: "tribute" };
     const existing = result.map((entry) => entry.order);
@@ -767,13 +783,13 @@ function gateCandidates(game: GameState, playerId: number, profile: BotProfile, 
     let score = 42 + behindPace * 24 * profile.priorities.gate + finalPressure * 90;
     if (objectiveNeed) score += 28 * profile.priorities.legacy;
     if (eraLastTurn) score += 120 * profile.priorities.survival;
-    if (game.turn === 16) score += 250;
-    if (profile.behaviors.punishFreeRiders && !eraLastTurn && game.era < 4 && gateShortfall === 0) score -= 12;
+    if (game.turn === totalTurns(game)) score += 250;
+    if (profile.behaviors.punishFreeRiders && !eraLastTurn && game.era < finalEra(game) && gateShortfall === 0) score -= 12;
     result.push(candidate(
       order,
       score,
-      [game.turn === 16 ? "Collective survival overrides all optional spending" : "Gate pace model identifies a contribution obligation", `Personal remaining fair-share estimate is ${expectedShare}`],
-      game.era < 4 ? ["tribute"] : [],
+      [game.turn === totalTurns(game) ? "Collective survival overrides all optional spending" : "Gate pace model identifies a contribution obligation", `Personal remaining fair-share estimate is ${expectedShare}`],
+      game.era < finalEra(game) ? ["tribute"] : [],
     ));
   }
   return result;
@@ -787,7 +803,7 @@ function reservePenalty(game: GameState, playerId: number, profile: BotProfile, 
   const player = game.players[playerId];
   const includesTribute = orders.some((order) => order.kind === "tribute");
   if (profile.behaviors.protectGateCompletion && !includesTribute &&
-      !player.eraTributes[game.era - 1] && game.gate < game.players.length * 3) {
+      !player.eraTributes[game.era - 1] && game.gate < gateTarget(game)) {
     const gateCost = tributeCosts[game.era];
     for (const [key, required] of Object.entries(gateCost)) {
       const before = key === "labor" ? player.labor : player.resources[key as Resource];
@@ -842,7 +858,7 @@ function assessment(entry: BotCandidate): BotOrderAssessment {
 
 function posture(game: GameState, playerId: number, threats: ReturnType<typeof threatSummary>) {
   const player = game.players[playerId], leader = Math.max(...game.players.map((candidate) => candidate.lp));
-  if (game.turn >= 14 && game.gate < game.players.length * 3) return "Gate stabilization with selective scoring";
+  if (game.turn >= totalTurns(game) - 2 && game.gate < gateTarget(game)) return "Gate stabilization with selective scoring";
   if (threats.some((entry) => entry.threat > entry.defense)) return "Defensive consolidation and counter-positioning";
   if (player.lp < leader) return "Efficient Legacy acceleration and leader denial";
   if (factionRules(player) === "varkesh") return "Controlled force projection";
@@ -866,7 +882,7 @@ export function planBotTurn(game: GameState, playerId: number, profile: BotProfi
   const selected = selectBundle(privateGame, playerId, profile, all, strategicPlan), chosen = selected.best.candidates;
   const chosenIds = new Set(chosen.map((entry) => entry.id));
   const rejected = selected.ranked.filter((entry) => !chosenIds.has(entry.id)).slice(0, 4);
-  const target = game.players.length * 3, remaining = Math.max(0, target - game.gate), turnsRemaining = 17 - game.turn;
+  const target = gateTarget(game), remaining = Math.max(0, target - game.gate), turnsRemaining = totalTurns(game) + 1 - game.turn;
   const confidence = Math.max(0.35, Math.min(0.96, 0.88 - threats.length * 0.035 - profile.planning.uncertaintyPenalty * 0.08));
   const report: BotDecisionReport = {
     id: `bot-report-${game.turn}-${playerId}-${game.botReports.length}`,
@@ -908,6 +924,11 @@ export function takeBotTurn(game: GameState, playerId: number, profile: BotProfi
   const player = game.players[playerId];
   if (player.controller.kind !== "bot" || player.controller.profileId !== profile.id)
     return { ok: false, message: "That seat is not controlled by this bot profile." };
+  if (game.orderProtocol.phase === "negotiation") {
+    game.orderProtocol.phase = "orders";
+    game.orderProtocol.currentPlayer = playerId;
+    game.active = playerId;
+  }
   if (game.orderProtocol.phase !== "orders" || game.orderProtocol.currentPlayer !== playerId)
     return { ok: false, message: "The bot cannot act outside its private Orders handoff." };
   const memory = updateBotMemory(game, playerId, profile);

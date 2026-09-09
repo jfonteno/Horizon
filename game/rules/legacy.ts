@@ -7,8 +7,9 @@ import type {
   PlayerLegacyMetrics,
   PlayerState,
 } from "../types";
-import { activeAgreements } from "./diplomacy";
+import { activeAgreements, hexDistance } from "./diplomacy";
 import { carrierLibrary, totalCombatUnits } from "./fleet";
+import { finalEra, gateTarget } from "./format";
 
 // Hidden Legacy revision: tuned for four-Era play so early objectives reward strategic direction rather than requiring mature economies.
 // Existing Hidden Legacy IDs are preserved for save compatibility.
@@ -47,6 +48,8 @@ export const universalLegacy: LegacyObjective[] = [
     condition: "Possess Level II in 3 different Technology branches.",
     automatic: true,
   },
+  { id: "first-foundations", era: 1, name: "First Foundations", lp: 3, condition: "Control 2 Habitats and 2 economic Centers.", automatic: true },
+  { id: "prepared-civilization", era: 1, name: "Prepared Civilization", lp: 3, condition: "Control 6 CU and 2 military vessels.", automatic: true },
   {
     id: "hub-civilization",
     era: 2,
@@ -64,15 +67,9 @@ export const universalLegacy: LegacyObjective[] = [
     condition: "Maintain agreements with 3 different civilizations.",
     automatic: true,
   },
-  {
-    id: "joint-venture",
-    era: 2,
-    name: "Joint Venture",
-    lp: 4,
-    condition:
-      "Complete a project with contributions from at least 2 other civilizations.",
-    automatic: false,
-  },
+  { id: "developed-frontier", era: 2, name: "Developed Frontier", lp: 4, condition: "Control 3 Habitats, including a Colony, and 3 economic Centers.", automatic: true },
+  { id: "technological-momentum", era: 2, name: "Technological Momentum", lp: 4, condition: "Have four branches at II and one at III.", automatic: true },
+  { id: "secured-frontier", era: 2, name: "Secured Frontier", lp: 4, condition: "Control 3 Habitats, 8 CU, and military presence in 2 non-Homeworld hexes.", automatic: true },
   {
     id: "master-discipline",
     era: 3,
@@ -97,8 +94,10 @@ export const universalLegacy: LegacyObjective[] = [
     lp: 4,
     condition:
       "Participate in a formal Alliance involving at least 3 civilizations.",
-    automatic: false,
+    automatic: true,
   },
+  { id: "great-works", era: 3, name: "Great Works", lp: 4, condition: "During Era III complete 3 Habitat developments across 2 Habitats, including a Center and upgrade.", automatic: true },
+  { id: "projection-power", era: 3, name: "Projection of Power", lp: 4, condition: "Control 10 CU with military presence in 3 non-Homeworld hexes and one force 3 hexes from home.", automatic: true },
   {
     id: "architect-horizon",
     era: 4,
@@ -124,6 +123,13 @@ export const universalLegacy: LegacyObjective[] = [
       "Maintain 3 agreements, control 4 Habitats, and possess Level III in 3 branches.",
     automatic: true,
   },
+  { id: "civilization-scale", era: 4, name: "Civilization at Scale", lp: 5, condition: "Control 4 Habitats, 8 CU, 3 agreements, and 3 branches at III.", automatic: true },
+  { id: "system-power", era: 4, name: "System Power", lp: 5, condition: "Control 12 CU, 16 military capacity, and a Level IV Technology.", automatic: true },
+  { id: "system-architect", era: 5, name: "System Architect", lp: 4, condition: "During Era V complete 3 Habitat developments across 2 Habitats, including an upgrade.", automatic: true },
+  { id: "strategic-supremacy", era: 5, name: "Strategic Supremacy", lp: 4, condition: "Control 14 CU, 18 military capacity, and presence in 3 non-Homeworld hexes.", automatic: true },
+  { id: "interstellar-institution", era: 5, name: "Interstellar Institution", lp: 5, condition: "Maintain 4 agreements involving 3 civilizations and store 3 Influence.", automatic: true },
+  { id: "complete-civilization-v", era: 5, name: "Complete Civilization", lp: 5, condition: "Control 4 Habitats, 4 economic Center types, 4 branches at III, and 10 CU.", automatic: true },
+  { id: "legacy-power", era: 5, name: "Legacy Power", lp: 5, condition: "During Era V contribute or build military, advance Technology, develop a Habitat, and trade.", automatic: true },
 ];
 
 const H = (
@@ -394,6 +400,16 @@ export const hiddenLegacyDeck: HiddenLegacyCard[] = [
     6,
     "Reach Level III in at least 4 Technology branches, control at least 3 Habitats, and maintain at least 1 agreement.",
   ),
+  H("h5-great", 5, "Great Works", 6, "Complete 4 Habitat developments across 3 Habitats, including a Center and upgrade."),
+  H("h5-command", 5, "Command of the System", 6, "Win 2 combats against 2 civilizations and retain all starting Era V Habitats."),
+  H("h5-commerce", 5, "Commercial Commonwealth", 6, "Complete 5 trades involving 3 civilizations, giving and receiving 5 resources."),
+  H("h5-science", 5, "Mature Science", 6, "Advance 2 different branches and end with 3 Research."),
+  H("h5-federal", 5, "Federal Network", 6, "Establish 2 agreements and end with 4 active agreements involving 3 civilizations."),
+  H("h5-reserve", 5, "Strategic Reserve", 6, "End with 10 Currency, Material, and Research combined, 10 CU, and 2 Influence."),
+  H("h5-expansion", 5, "Grand Expansion", 6, "Establish or capture 2 Habitats and develop Habitats across 3 hexes."),
+  H("h5-steward", 5, "Horizon Steward", 6, "Contribute or complete an additional advance or development, provide 4 resources, and store 2 Influence."),
+  H("h5-peace", 5, "Arsenal of Peace", 6, "End with 14 CU, initiate no combat, and establish an agreement."),
+  H("h5-motion", 5, "Civilization in Motion", 6, "Complete 4 different development, military, Technology, or diplomatic action categories."),
 ];
 
 export const civilizationLegacy: Record<
@@ -428,6 +444,8 @@ export const civilizationLegacy: Record<
       condition: "Control 2 rival Homeworld Habitats.",
       automatic: true,
     },
+    { id: "v-campaign", name: "Campaign Supremacy", lp: 6, condition: "Win combats against 3 civilizations and control a captured Habitat.", automatic: true },
+    { id: "v-dominion", name: "Dominion of the Reach", lp: 7, condition: "Win against all rivals, control 3 foreign-founded Habitats, and end with 14 CU.", automatic: true },
   ],
   helix: [
     {
@@ -451,6 +469,8 @@ export const civilizationLegacy: Record<
       condition: "Export Technology to 2 civilizations.",
       automatic: true,
     },
+    { id: "h-leadership", name: "Scientific Leadership", lp: 6, condition: "Have 2 branches at IV and 4 Research Centers.", automatic: true },
+    { id: "h-synthesis", name: "Grand Synthesis", lp: 7, condition: "Have all branches at III, 3 at IV, and export to every rival.", automatic: true },
   ],
   foundry: [
     {
@@ -474,6 +494,8 @@ export const civilizationLegacy: Record<
       condition: "Control 5 economic Centers across 3 Habitats.",
       automatic: true,
     },
+    { id: "f-worldworks", name: "Worldworks", lp: 6, condition: "Complete 10 Habitat-development actions across 4 Habitats.", automatic: true },
+    { id: "f-civilization", name: "Industrial Civilization", lp: 7, condition: "Control 5 Habitats, 8 economic Centers, 2 Metropolises, and 3 Material Centers.", automatic: true },
   ],
   aurelians: [
     {
@@ -497,6 +519,8 @@ export const civilizationLegacy: Record<
       condition: "Gain 5 bonus Influence from diplomacy.",
       automatic: true,
     },
+    { id: "a-concert", name: "Concert of Worlds", lp: 6, condition: "Maintain agreements with 4 civilizations across 3 types and store 4 Influence.", automatic: true },
+    { id: "a-consensus", name: "Galactic Consensus", lp: 7, condition: "Establish with every rival, end with 5 agreements, and gain 10 faction Influence.", automatic: true },
   ],
   meridian: [
     {
@@ -520,6 +544,8 @@ export const civilizationLegacy: Record<
       condition: "Gain 8 Currency from Brokerage and Market sales.",
       automatic: true,
     },
+    { id: "m-exchange", name: "System Exchange", lp: 6, condition: "Trade with every rival and broker 6 trades across 4 pairs.", automatic: true },
+    { id: "m-commercial", name: "Commercial Hegemony", lp: 7, condition: "Gain 15 Market or Brokerage Currency, maintain 4 trade relations, and complete 10 direct trades.", automatic: true },
   ],
   farbound: [
     {
@@ -544,6 +570,8 @@ export const civilizationLegacy: Record<
         "Sell surveys to 3 civilizations and control 4 surveyed Habitats.",
       automatic: true,
     },
+    { id: "b-pathfinder", name: "Pathfinder Civilization", lp: 6, condition: "Survey 10 hexes, publicly reveal 8, and establish 4 surveyed Habitats.", automatic: true },
+    { id: "b-beyond", name: "Beyond the Frontier", lp: 7, condition: "Survey 12 hexes, control 5 surveyed Habitats, trigger Frontier Legacy twice, and sell to 3 civilizations.", automatic: true },
   ],
 };
 
@@ -562,30 +590,33 @@ export function civilizationObjectives(player: PlayerState) {
 
 export function emptyLegacyMetrics(): PlayerLegacyMetrics {
   return {
-    habitatsEstablished: [0, 0, 0, 0],
-    habitatsCaptured: [0, 0, 0, 0],
-    metropolisCaptured: [0, 0, 0, 0],
-    revealedHexes: [0, 0, 0, 0],
-    builtVessels: [0, 0, 0, 0],
-    recruitedCU: [0, 0, 0, 0],
-    builtCenters: [0, 0, 0, 0],
-    upgradedHabitats: [0, 0, 0, 0],
-    combatInitiated: [0, 0, 0, 0],
-    productionTotals: [0, 0, 0, 0],
-    productionTypes: [[], [], [], []],
+    habitatsEstablished: [0, 0, 0, 0, 0],
+    habitatsCaptured: [0, 0, 0, 0, 0],
+    metropolisCaptured: [0, 0, 0, 0, 0],
+    revealedHexes: [0, 0, 0, 0, 0],
+    builtVessels: [0, 0, 0, 0, 0],
+    recruitedCU: [0, 0, 0, 0, 0],
+    builtCenters: [0, 0, 0, 0, 0],
+    upgradedHabitats: [0, 0, 0, 0, 0],
+    combatInitiated: [0, 0, 0, 0, 0],
+    productionTotals: [0, 0, 0, 0, 0],
+    productionTypes: [[], [], [], [], []],
     productionAmounts: [
       { material: 0, currency: 0, research: 0, influence: 0 },
       { material: 0, currency: 0, research: 0, influence: 0 },
       { material: 0, currency: 0, research: 0, influence: 0 },
       { material: 0, currency: 0, research: 0, influence: 0 },
+      { material: 0, currency: 0, research: 0, influence: 0 },
     ],
-    technologyAdvances: [[], [], [], []],
-    tradePartners: [[], [], [], []],
-    receivedTradeValue: [0, 0, 0, 0],
-    givenTradeResources: [0, 0, 0, 0],
-    givenResearch: [0, 0, 0, 0],
-    laborTraded: [0, 0, 0, 0],
-    agreementsEstablished: [[], [], [], []],
+    technologyAdvances: [[], [], [], [], []],
+    tradePartners: [[], [], [], [], []],
+    tradeCount: [0, 0, 0, 0, 0],
+    receivedTradeValue: [0, 0, 0, 0, 0],
+    givenTradeResources: [0, 0, 0, 0, 0],
+    givenTradePartners: [[], [], [], [], []],
+    givenResearch: [0, 0, 0, 0, 0],
+    laborTraded: [0, 0, 0, 0, 0],
+    agreementsEstablished: [[], [], [], [], []],
     marketCurrencyEarned: 0,
     originalHabitatsCaptured: [],
     prospectedHexes: [],
@@ -593,6 +624,14 @@ export function emptyLegacyMetrics(): PlayerLegacyMetrics {
     brokeragePairs: [],
     surveySales: [],
     envoyHosts: [],
+    habitatDevelopmentHexes: [[], [], [], [], []],
+    militaryPresenceHexes: [[], [], [], [], []],
+    combatWinsAgainst: [],
+    directTradePartners: [],
+    directTradeCount: 0,
+    brokerageTransactions: 0,
+    frontierLegacyHexes: [],
+    publicReveals: 0,
   };
 }
 export function emptyLegacyBreakdown() {
@@ -611,6 +650,12 @@ const agreementPartners = (game: GameState, id: number, types?: string[]) =>
   ).size;
 const techAt = (p: PlayerState, level: number) =>
   Object.values(p.tech).filter((value) => value >= level).length;
+const economicCenters = (game: GameState, id: number) => habitats(game, id).reduce((sum, hex) => sum + hex.centers.filter((center) => center !== "defense").length, 0);
+const carrierCapacity = (game: GameState, id: number) => game.carriers.filter((carrier) => carrier.owner === id).reduce((sum, carrier) => sum + carrierLibrary[carrier.type].capacity, 0);
+const militaryHexes = (game: GameState, id: number) => new Set([
+  ...game.carriers.filter((carrier) => carrier.owner === id && carrier.cu > 0).map((carrier) => carrier.hex),
+  ...game.hexes.filter((hex) => hex.owner === id && hex.combat > 0).map((hex) => hex.id),
+]);
 export function awardLegacy(
   game: GameState,
   playerId: number,
@@ -634,6 +679,10 @@ function universalSatisfied(game: GameState, p: PlayerState, id: string) {
       return unique(m.tradePartners[0]) >= 3;
     case "renaissance":
       return techAt(p, 2) >= 3;
+    case "first-foundations":
+      return hs.length >= 2 && economicCenters(game, p.id) >= 2;
+    case "prepared-civilization":
+      return totalCombatUnits(game, p.id) >= 6 && game.carriers.filter((carrier) => carrier.owner === p.id).length >= 2;
     case "hub-civilization":
       return (
         new Set(
@@ -654,10 +703,27 @@ function universalSatisfied(game: GameState, p: PlayerState, id: string) {
       );
     case "diplomatic-network":
       return agreementPartners(game, p.id) >= 3;
+    case "developed-frontier":
+      return hs.length >= 3 && hs.some((hex) => hex.tier !== "Outpost") && economicCenters(game, p.id) >= 3;
+    case "technological-momentum":
+      return techAt(p, 2) >= 4 && techAt(p, 3) >= 1;
+    case "secured-frontier": {
+      const presence = [...militaryHexes(game, p.id)].filter((id) => game.hexes.find((hex) => hex.id === id)?.kind !== "home").length;
+      return hs.length >= 3 && totalCombatUnits(game, p.id) >= 8 && presence >= 2;
+    }
     case "master-discipline":
       return techAt(p, 4) >= 1;
     case "systemic-economy":
       return new Set(m.productionTypes[2]).size >= 5;
+    case "coalition":
+      return agreementPartners(game, p.id, ["alliance"]) >= 2;
+    case "great-works":
+      return m.builtCenters[2] >= 1 && m.upgradedHabitats[2] >= 1 && m.builtCenters[2] + m.upgradedHabitats[2] >= 3 && new Set(m.habitatDevelopmentHexes[2]).size >= 2;
+    case "projection-power": {
+      const home = game.hexes.find((hex) => hex.kind === "home" && hex.originalOwner === p.id)?.id || "";
+      const presence = [...militaryHexes(game, p.id)].filter((id) => game.hexes.find((hex) => hex.id === id)?.kind !== "home");
+      return totalCombatUnits(game, p.id) >= 10 && presence.length >= 3 && presence.some((id) => home && hexDistance(id, home) >= 3);
+    }
     case "architect-horizon":
       return p.eraTributes.every((v) => v >= 1);
     case "metropolis-stars":
@@ -668,6 +734,22 @@ function universalSatisfied(game: GameState, p: PlayerState, id: string) {
         hs.length >= 4 &&
         techAt(p, 3) >= 3
       );
+    case "civilization-scale":
+      return hs.length >= 4 && totalCombatUnits(game, p.id) >= 8 && agreementPartners(game, p.id) >= 3 && techAt(p, 3) >= 3;
+    case "system-power":
+      return totalCombatUnits(game, p.id) >= 12 && carrierCapacity(game, p.id) >= 16 && techAt(p, 4) >= 1;
+    case "system-architect":
+      return m.upgradedHabitats[4] >= 1 && m.builtCenters[4] + m.upgradedHabitats[4] >= 3 && new Set(m.habitatDevelopmentHexes[4]).size >= 2;
+    case "strategic-supremacy":
+      return totalCombatUnits(game, p.id) >= 14 && carrierCapacity(game, p.id) >= 18 && [...militaryHexes(game, p.id)].filter((id) => game.hexes.find((hex) => hex.id === id)?.kind !== "home").length >= 3;
+    case "interstellar-institution":
+      return activeAgreements(game).filter((agreement) => agreement.parties.includes(p.id)).length >= 4 && agreementPartners(game, p.id) >= 3 && p.resources.influence >= 3;
+    case "complete-civilization-v":
+      return hs.length >= 4 && new Set(hs.flatMap((hex) => hex.centers.filter((center) => center !== "defense"))).size >= 4 && techAt(p, 3) >= 4 && totalCombatUnits(game, p.id) >= 10;
+    case "legacy-power": {
+      const military = m.builtVessels[4] > 0 || m.recruitedCU[4] > 0;
+      return (p.eraTributes[4] > 0 || (game.gate >= gateTarget(game) && military)) && m.technologyAdvances[4].length > 0 && m.builtCenters[4] + m.upgradedHabitats[4] > 0 && m.tradePartners[4].length > 0;
+    }
     default:
       return false;
   }
@@ -691,6 +773,10 @@ function civilizationSatisfied(game: GameState, p: PlayerState, id: string) {
           (h) => h.originalOwner !== undefined && h.originalOwner !== p.id,
         ).length >= 2
       );
+    case "v-campaign":
+      return m.combatWinsAgainst.length >= 3 && hs.some((h) => h.originalOwner !== undefined && h.originalOwner !== p.id);
+    case "v-dominion":
+      return m.combatWinsAgainst.length >= Math.min(4, game.players.length - 1) && hs.filter((h) => h.originalOwner !== undefined && h.originalOwner !== p.id).length >= 3 && totalCombatUnits(game, p.id) >= 14;
     case "h-network":
       return (
         hs.reduce(
@@ -702,6 +788,10 @@ function civilizationSatisfied(game: GameState, p: PlayerState, id: string) {
       return techAt(p, 3) >= 3;
     case "h-export":
       return p.diplomacy.technologyExportPartners.length >= 2;
+    case "h-leadership":
+      return techAt(p, 4) >= 2 && hs.reduce((sum, h) => sum + h.centers.filter((c) => c === "research").length, 0) >= 4;
+    case "h-synthesis":
+      return techAt(p, 3) >= 5 && techAt(p, 4) >= 3 && p.diplomacy.technologyExportPartners.length >= Math.min(3, game.players.length - 1);
     case "f-engine":
       return m.productionAmounts.some((amounts) => amounts.material >= 4);
     case "f-prospect":
@@ -714,6 +804,10 @@ function civilizationSatisfied(game: GameState, p: PlayerState, id: string) {
           0,
         ) >= 5
       );
+    case "f-worldworks":
+      return m.habitatDevelopmentHexes.flat().length >= 10 && new Set(m.habitatDevelopmentHexes.flat()).size >= 4;
+    case "f-civilization":
+      return hs.length >= 5 && economicCenters(game, p.id) >= 8 && hs.filter((h) => h.tier === "Metropolis").length >= 2 && hs.reduce((sum, h) => sum + h.centers.filter((c) => c === "material").length, 0) >= 3;
     case "a-web":
       return agreementPartners(game, p.id) >= 3;
     case "a-service":
@@ -730,6 +824,12 @@ function civilizationSatisfied(game: GameState, p: PlayerState, id: string) {
       );
     case "a-influence":
       return (p.diplomacy.bonusInfluenceGained || 0) >= 5;
+    case "a-concert": {
+      const agreements = activeAgreements(game).filter((agreement) => agreement.parties.includes(p.id));
+      return agreementPartners(game, p.id) >= 4 && new Set(agreements.map((agreement) => agreement.type)).size >= 3 && p.resources.influence >= 4;
+    }
+    case "a-consensus":
+      return p.diplomacy.firstAgreementPartners.length >= game.players.length - 1 && activeAgreements(game).filter((agreement) => agreement.parties.includes(p.id)).length >= 5 && (p.diplomacy.bonusInfluenceGained || 0) >= 10;
     case "m-network":
       return agreementPartners(game, p.id, ["trade", "alliance"]) >= 3;
     case "m-broker":
@@ -738,6 +838,10 @@ function civilizationSatisfied(game: GameState, p: PlayerState, id: string) {
       );
     case "m-hegemony":
       return m.marketCurrencyEarned >= 8;
+    case "m-exchange":
+      return m.directTradePartners.length >= game.players.length - 1 && m.brokerageTransactions >= 6 && new Set(m.brokeragePairs.map((pair) => pair.split(":").pop())).size >= Math.min(4, ((game.players.length - 1) * (game.players.length - 2)) / 2);
+    case "m-commercial":
+      return m.marketCurrencyEarned >= 15 && agreementPartners(game, p.id, ["trade", "alliance"]) >= Math.min(4, game.players.length - 1) && m.directTradeCount >= 10;
     case "b-survey":
       return p.privateSurveys.length >= 6;
     case "b-frontier":
@@ -747,6 +851,10 @@ function civilizationSatisfied(game: GameState, p: PlayerState, id: string) {
         new Set(m.surveySales).size >= 3 &&
         hs.filter((h) => h.surveyedBy?.includes(p.id)).length >= 4
       );
+    case "b-pathfinder":
+      return p.privateSurveys.length >= 10 && m.publicReveals >= 8 && m.discountedHabitats.length >= 4;
+    case "b-beyond":
+      return p.privateSurveys.length >= 12 && hs.filter((h) => h.surveyedBy?.includes(p.id)).length >= 5 && m.frontierLegacyHexes.length >= 2 && new Set(m.surveySales).size >= 3;
     default:
       return false;
   }
@@ -898,21 +1006,21 @@ function hiddenSatisfied(
       return p.eraTributes[i] >= 1 && m.givenTradeResources[i] >= 2;
 
     case "h3-tech":
-      return techAt(p, 4) >= 1;
+      return adv.some((branch) => p.tech[branch] === 4) && p.resources.research >= 2;
     case "h3-builder":
-      return hs.some((h) => h.tier === "Metropolis") && m.builtCenters[i] >= 1;
+      return m.builtCenters[i] >= 1 && m.upgradedHabitats[i] >= 1 && m.builtCenters[i] + m.upgradedHabitats[i] >= 3 && new Set(m.habitatDevelopmentHexes[i]).size >= 2;
     case "h3-engine":
-      return m.productionTotals[i] >= 7;
+      return m.productionTotals[i] >= 9;
     case "h3-mobilization":
-      return m.recruitedCU[i] >= 4;
+      return m.recruitedCU[i] >= 6 && totalCombatUnits(game, p.id) >= 8;
     case "h3-conqueror":
-      return m.habitatsCaptured[i] >= 1;
+      return m.habitatsCaptured[i] >= 2;
     case "h3-peace":
-      return totalCombatUnits(game, p.id) >= 10 && m.combatInitiated[i] === 0;
+      return totalCombatUnits(game, p.id) >= 12 && m.combatInitiated[i] === 0;
     case "h3-broker":
-      return unique(trades) >= 3 && agreementPartners(game, p.id) >= 2;
+      return m.tradeCount[i] >= 4 && unique(trades) >= 3 && activeAgreements(game).filter((agreement) => agreement.parties.includes(p.id)).length >= 3;
     case "h3-supplier":
-      return m.givenTradeResources[i] >= 5;
+      return m.givenTradeResources[i] >= 6 && unique(m.givenTradePartners[i]) >= 3;
     case "h3-architect": {
       const items =
         m.builtVessels[i] +
@@ -924,10 +1032,10 @@ function hiddenSatisfied(
         m.builtCenters[i],
         m.upgradedHabitats[i] + m.habitatsEstablished[i],
       ].filter((value) => value > 0).length;
-      return items >= 3 && categories >= 2;
+      return items >= 4 && categories >= 3;
     }
     case "h3-leadership":
-      return p.eraTributes[i] >= 1 && p.tributes >= 3;
+      return p.eraTributes[i] >= 1 && p.tributes >= Math.max(...game.players.map((player) => player.tributes)) && m.givenTradeResources[i] >= 2;
 
     case "h4-science":
       return techAt(p, 4) >= 2;
@@ -949,6 +1057,29 @@ function hiddenSatisfied(
       return p.eraTributes[i] >= 2;
     case "h4-complete":
       return techAt(p, 3) >= 4 && hs.length >= 3 && agreementPartners(game, p.id) >= 1;
+
+    case "h5-great":
+      return m.builtCenters[i] >= 1 && m.upgradedHabitats[i] >= 1 && m.builtCenters[i] + m.upgradedHabitats[i] >= 4 && new Set(m.habitatDevelopmentHexes[i]).size >= 3;
+    case "h5-command":
+      return m.combatWinsAgainst.length >= 2;
+    case "h5-commerce":
+      return m.tradeCount[i] >= 5 && unique(trades) >= 3 && m.givenTradeResources[i] >= 5 && m.receivedTradeValue[i] >= 5;
+    case "h5-science":
+      return new Set(adv).size >= 2 && p.resources.research >= 3;
+    case "h5-federal":
+      return unique(m.agreementsEstablished[i]) >= 2 && activeAgreements(game).filter((agreement) => agreement.parties.includes(p.id)).length >= 4 && agreementPartners(game, p.id) >= 3;
+    case "h5-reserve":
+      return p.resources.material + p.resources.currency + p.resources.research >= 10 && totalCombatUnits(game, p.id) >= 10 && p.resources.influence >= 2;
+    case "h5-expansion":
+      return m.habitatsEstablished[i] + m.habitatsCaptured[i] >= 2 && new Set(m.habitatDevelopmentHexes[i]).size >= 3;
+    case "h5-steward": {
+      const alternate = game.gate >= gateTarget(game) && (adv.length >= 2 || m.builtCenters[i] + m.upgradedHabitats[i] >= 2);
+      return (p.eraTributes[i] >= 1 || alternate) && m.givenTradeResources[i] >= 4 && p.resources.influence >= 2;
+    }
+    case "h5-peace":
+      return totalCombatUnits(game, p.id) >= 14 && m.combatInitiated[i] === 0 && unique(m.agreementsEstablished[i]) >= 1;
+    case "h5-motion":
+      return [adv.length, m.builtCenters[i], m.upgradedHabitats[i], m.builtVessels[i], m.recruitedCU[i], m.agreementsEstablished[i].length].filter((value) => value > 0).length >= 4;
     default:
       return false;
   }
@@ -1288,9 +1419,9 @@ export function manualClaimCivilization(
 }
 
 export function finalizeGame(game: GameState): GameResult {
-  scoreHiddenEra(game, 4);
+  scoreHiddenEra(game, finalEra(game));
   evaluateLegacy(game);
-  const target = game.players.length * 3;
+  const target = gateTarget(game);
   if (game.gate < target) {
     game.result = {
       gateSucceeded: false,

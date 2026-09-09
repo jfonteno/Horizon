@@ -10,6 +10,8 @@ import { availableCivilianType, civilianLibrary } from "./faction-operations";
 import { technologyCost } from "./diplomacy";
 import { availableCarrierTypes, carrierCost, carrierLibrary } from "./fleet";
 import { canPay, centerCosts, spend, tributeCosts } from "./economy";
+import { availableExplorationTypes, explorationLibrary } from "./exploration";
+import { finalEra, gateTarget } from "./format";
 
 export type PurchaseCost = Partial<Record<Resource | "labor", number>>;
 export type ConstructionOrder = Extract<SecretOrder, { kind: "construct" }>;
@@ -45,6 +47,7 @@ function constructionName(construction: ConstructionOrder["construction"]) {
       : `${construction.center[0].toUpperCase()}${construction.center.slice(1)} Center`;
   if (construction.type === "carrier") return carrierLibrary[construction.carrier].name;
   if (construction.type === "civilian") return civilianLibrary[construction.civilian].name;
+  if (construction.type === "exploration") return explorationLibrary[construction.vessel].name;
   return `${construction.pairs * 2} Combat Units`;
 }
 
@@ -106,6 +109,12 @@ export function constructionQuote(
       ? { label: definition.name, cost: definition.cost, available: true }
       : unavailable("Requires its matching faction at Exploration II.", definition.cost);
   }
+  if (construction.type === "exploration") {
+    const definition = explorationLibrary[construction.vessel];
+    return availableExplorationTypes(game, playerId).includes(construction.vessel)
+      ? { label: definition.name, cost: definition.cost, available: true }
+      : unavailable("Requires higher Exploration Technology.", definition.cost);
+  }
   const cost = { currency: construction.pairs, labor: construction.pairs };
   if (!Number.isInteger(construction.pairs) || construction.pairs < 1)
     return unavailable("Recruit at least two Combat Units.", cost);
@@ -164,9 +173,9 @@ export function projectedOrderBudget(
   }
   let tributeCount = 0;
   for (let index = 0; index < orders.filter((candidate) => candidate.kind === "tribute").length; index++) {
-    if (game.gate >= game.players.length * 3)
+    if (game.gate >= gateTarget(game))
       return { remaining, error: "The Horizon Gate is complete. No further Tributes may be submitted." };
-    if (game.era < 4 && (remaining.eraTributes[game.era - 1] || tributeCount > 0))
+    if (game.era < finalEra(game) && (remaining.eraTributes[game.era - 1] || tributeCount > 0))
       return { remaining, error: "Only one Gate Tribute may be submitted in this Era." };
     if (!canPay(remaining, tributeCosts[game.era]))
       return { remaining, error: "Horizon Gate Tribute: insufficient resources or Labor." };

@@ -7,11 +7,14 @@ import type {
   HexState,
   PlayerState,
   PlayerController,
+  ExplorationVesselState,
 } from "../types";
 import type { ThemeId } from "../themes";
 import { seededRandom, shuffle } from "./random";
 import { emptyLegacyMetrics } from "../rules/legacy";
 import { recordGameSnapshot } from "../analytics";
+import type { GameFormatId } from "../rules/format";
+import { formatRules } from "../rules/format";
 
 export function createGame(
   playerCount: number,
@@ -21,6 +24,7 @@ export function createGame(
   seed = Math.floor(Date.now() % 1000000),
   controllers: PlayerController[] = [],
   spectatorMode = false,
+  format: GameFormatId = "four-era",
 ): GameState {
   const map = mapLibrary[mapId];
   if (!map) throw new Error(`Map ${mapId} is not installed on this Horizon server.`);
@@ -31,10 +35,10 @@ export function createGame(
   const
     random = seededRandom(seed),
     startingHexes = shuffle(
-      map.starts.slice(0, playerCount),
+      (map.startsByPlayerCount?.[playerCount] || map.starts.slice(0, playerCount)),
       seededRandom((seed ^ 0x9e3779b9) >>> 0),
     ),
-    openCount = map.rows * map.columns - map.blocked.size - map.starts.length;
+    openCount = map.rows * map.columns - map.blocked.size - startingHexes.length;
   const pool = [...map.tilePool];
   while (pool.length < openCount) pool.push("empty");
   const mixed = shuffle(pool, random);
@@ -72,7 +76,7 @@ export function createGame(
           id,
           row,
           col,
-          kind: (mixed[position++] || "empty") as HexKind,
+          kind: ((mixed[position++] || "empty") === "hazard" ? "empty" : mixed[position - 1] || "empty") as HexKind,
           revealed: false,
           centers: [],
           combat: 0,
@@ -103,8 +107,9 @@ export function createGame(
       civilizationClaims: [],
       hiddenLegacy: {},
       tributes: 0,
-      eraTributes: [0, 0, 0, 0],
+      eraTributes: Array(formatRules(format).eras).fill(0),
       tech: { Military: 1, Economy: 1, Policy: 1, Exploration: 1, Resource: 1 },
+      explorationVessels: [],
       explorer: startingHexes[id],
       colonyShip: startingHexes[id],
       modules: 1,
@@ -137,6 +142,19 @@ export function createGame(
     if (homeCenter) hexes.find((hex) => hex.id === startingHexes[id])!.centers.push(homeCenter);
     return player;
   });
+  for (const player of players) {
+    const vessel: ExplorationVesselState = {
+      id: `exploration-${player.id}-1`,
+      owner: player.id,
+      type: "exploration",
+      hex: startingHexes[player.id],
+      readyTurn: 1,
+      movesRemaining: 1,
+      publicRevealsTurn: 0,
+      publicReveals: 0,
+    };
+    player.explorationVessels.push(vessel);
+  }
   const carriers: CarrierState[] = players.map((player) => ({
     id: `carrier-${player.id}-1`,
     owner: player.id,
@@ -147,7 +165,8 @@ export function createGame(
     movesRemaining: 2,
   }));
   const game: GameState = {
-    schemaVersion: 14,
+    schemaVersion: 15,
+    format,
     mapId,
     contentPacks: [
       ...new Map(
@@ -183,11 +202,13 @@ export function createGame(
     agreements: [],
     proposals: [],
     pendingLabor: [],
+    stationingPermissions: [],
     universalClaims: [],
+    pendingCombatRedistributions: [],
     spectatorMode,
     history: [],
     orderProtocol: {
-      phase: "orders",
+      phase: spectatorMode ? "orders" : "negotiation",
       turn: 1,
       currentPlayer: 0,
       submissions: [],

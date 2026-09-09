@@ -43,6 +43,17 @@ export type AgreementType =
   | "defensive"
   | "alliance";
 export type CivilianUnitType = "prospector" | "envoy" | "surveyor";
+export type ExplorationVesselType = "exploration" | "survey" | "deepSurvey" | "pathfinder";
+export type ExplorationVesselState = {
+  id: string;
+  owner: number;
+  type: ExplorationVesselType;
+  hex: string;
+  readyTurn: number;
+  movesRemaining: number;
+  publicRevealsTurn?: number;
+  publicReveals?: number;
+};
 export type CivilianUnitState = {
   id: string;
   owner: number;
@@ -63,13 +74,16 @@ export type PrivateSurvey = {
 
 export type SecretOrder =
   | { id: string; kind: "hold"; label?: string }
-  | { id: string; kind: "explorerMove"; destination: string }
-  | { id: string; kind: "colonyMove"; destination: string }
+  | { id: string; kind: "explorerMove"; destination: string; vesselId?: string; path?: string[] }
+  | { id: string; kind: "explorerScan"; vesselId?: string; hexIds: string[] }
+  | { id: string; kind: "farboundForwardScan"; vesselId?: string; hexId: string }
+  | { id: string; kind: "colonyMove"; destination: string; path?: string[] }
   | {
       id: string;
       kind: "carrierMove";
       carrierIds: string[];
       destination: string;
+      path?: string[];
     }
   | {
       id: string;
@@ -95,7 +109,8 @@ export type SecretOrder =
         | { type: "center"; center: CenterType }
         | { type: "carrier"; carrier: CarrierType }
         | { type: "recruit"; pairs: number }
-        | { type: "civilian"; civilian: CivilianUnitType };
+        | { type: "civilian"; civilian: CivilianUnitType }
+        | { type: "exploration"; vessel: ExplorationVesselType };
     }
   | { id: string; kind: "technology"; branch: TechnologyBranch }
   | { id: string; kind: "tribute" };
@@ -191,8 +206,10 @@ export type PlayerLegacyMetrics = {
   productionAmounts: Record<Resource, number>[];
   technologyAdvances: TechnologyBranch[][];
   tradePartners: number[][];
+  tradeCount: number[];
   receivedTradeValue: number[];
   givenTradeResources: number[];
+  givenTradePartners: number[][];
   givenResearch: number[];
   laborTraded: number[];
   agreementsEstablished: number[][];
@@ -203,6 +220,14 @@ export type PlayerLegacyMetrics = {
   brokeragePairs: string[];
   surveySales: number[];
   envoyHosts: number[];
+  habitatDevelopmentHexes: string[][];
+  militaryPresenceHexes: string[][];
+  combatWinsAgainst: number[];
+  directTradePartners: number[];
+  directTradeCount: number;
+  brokerageTransactions: number;
+  frontierLegacyHexes: string[];
+  publicReveals: number;
 };
 
 export type HiddenLegacyCard = {
@@ -300,6 +325,7 @@ export type PlayerState = {
   tributes: number;
   eraTributes: number[];
   tech: Record<TechnologyBranch, number>;
+  explorationVessels: ExplorationVesselState[];
   explorer: string;
   colonyShip: string;
   modules: number;
@@ -314,10 +340,12 @@ export type PlayerState = {
   surveyUsedTurn?: number;
   /** Retained for loading pre-0.17.1 saves. */
   forwardScanUsedTurn?: number;
+  homeProductionChoice?: Resource;
 };
 
 export type GameState = {
   schemaVersion: number;
+  format: import("./rules/format").GameFormatId;
   mapId: import("./maps/types").MapId;
   contentPacks?: { id: string; version: string }[];
   themeId: import("./themes/types").ThemeId;
@@ -338,7 +366,9 @@ export type GameState = {
   agreements: FormalAgreement[];
   proposals: DiplomacyProposal[];
   pendingLabor: { playerId: number; amount: number; effectiveTurn: number }[];
+  stationingPermissions: { hostId: number; guestId: number; kind: "defensive" | "envoy" }[];
   pendingCenterLoss?: { hexId: string; playerId: number; removeCount: number };
+  pendingCombatRedistributions: { hexId: string; playerId: number; total: number; carrierIds: string[]; allowStationed: boolean }[];
   universalClaims: UniversalClaim[];
   result?: GameResult;
   spectatorMode: boolean;

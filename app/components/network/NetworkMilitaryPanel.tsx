@@ -38,6 +38,24 @@ export default function NetworkMilitaryPanel({
   const selected = carriers.filter((carrier) => selectedIds.includes(carrier.id));
   const origin = selected[0]?.hex;
   const summary = taskForceSummary(game, selectedIds);
+  const redistribution = game.pendingCombatRedistributions.find((pending) => pending.playerId === playerId);
+
+  function resolveRedistribution() {
+    if (!redistribution) return;
+    let remaining = redistribution.total;
+    const assignments: { carrierId: string; cu: number }[] = [];
+    for (const carrierId of redistribution.carrierIds) {
+      const carrier = game.carriers.find((candidate) => candidate.id === carrierId)!;
+      const raw = window.prompt(`${carrierLibrary[carrier.type].name}: assign 1 to ${carrierLibrary[carrier.type].capacity} CU. ${remaining} CU remain.`, String(carrier.cu));
+      if (raw === null) return;
+      const cu = Number(raw);
+      if (!Number.isInteger(cu) || cu < 1 || cu > carrierLibrary[carrier.type].capacity) return;
+      assignments.push({ carrierId, cu }); remaining -= cu;
+    }
+    const stationed = redistribution.allowStationed ? remaining : 0;
+    if (remaining < 0 || (!redistribution.allowStationed && remaining !== 0)) return;
+    void onCommand({ kind: "redistributeCombatUnits", hexId: redistribution.hexId, assignments, stationed });
+  }
 
   function toggle(id: string) {
     const carrier = carriers.find((candidate) => candidate.id === id);
@@ -59,6 +77,7 @@ export default function NetworkMilitaryPanel({
   return <div className="network-military">
     <header className="network-panel-header"><span>FLEET COMMAND</span><h3>Task Forces and Combat</h3><p>Select any ready carriers in one hex, then choose Move and select a highlighted adjacent hex on the map. All movement remains sealed until Turn resolution.</p></header>
     <div className="military-total"><span>Total military strength</span><b>{totalCombatUnits(game, playerId)} CU</b></div>
+    {redistribution && <section className="network-action-card"><h4>Post-combat redistribution at {redistribution.hexId}</h4><p>Allocate exactly {redistribution.total} surviving CU. Every military vessel must retain at least 1 CU and cannot exceed Capacity.</p><button className="primary wide" disabled={busy} onClick={resolveRedistribution}>Assign surviving CU</button></section>}
     <div className="network-fleet-list">{carriers.map((carrier) => {
       const definition = carrierLibrary[carrier.type];
       const checked = selectedIds.includes(carrier.id);

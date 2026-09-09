@@ -38,6 +38,8 @@ import {
 } from "./diplomacy";
 import { projectedOrderBudget } from "./purchases";
 import { recordGameSnapshot } from "../analytics";
+import { beginExplorationTurn, buildExplorationVessel, farboundForwardScan, moveExplorationVessel, scanWithExplorationVessel } from "./exploration";
+import { finalEra, gateTarget, totalTurns } from "./format";
 
 export function beginSecretOrders(game: GameState) {
   if (game.result) return { ok: false, message: "The game is complete." };
@@ -68,7 +70,8 @@ function duplicateVesselOrders(orders: SecretOrder[]) {
       order.kind === "longRangeSurvey"
     )
       vessels.push(order.unitId);
-    if (order.kind === "explorerMove") vessels.push("explorer");
+    if (order.kind === "explorerMove" || order.kind === "explorerScan" || order.kind === "farboundForwardScan")
+      vessels.push(order.vesselId || "explorer");
     if (order.kind === "colonyMove" || order.kind === "establish")
       vessels.push("colony");
   }
@@ -80,7 +83,11 @@ export function submitSecretOrders(
   playerId: number,
   orders: SecretOrder[],
 ) {
-  const protocol = game.orderProtocol;
+  let protocol = game.orderProtocol;
+  if (protocol.phase === "negotiation") {
+    beginSecretOrders(game);
+    protocol = game.orderProtocol;
+  }
   if (
     protocol.phase !== "orders" ||
     protocol.turn !== game.turn ||
@@ -104,7 +111,7 @@ export function submitSecretOrders(
   if (orders.filter((order) => order.kind === "technology").length > 1)
     return { ok: false, message: "A civilization may advance Technology once per Turn." };
   if (
-    game.era < 4 &&
+    game.era < finalEra(game) &&
     orders.filter((order) => order.kind === "tribute").length > 1
   )
     return {
@@ -147,6 +154,10 @@ function resolveLongRangeSurveys(
   for (const { playerId, order } of orders)
     if (order.kind === "longRangeSurvey")
       longRangeSurvey(game, playerId, order.unitId, order.hexId);
+    else if (order.kind === "farboundForwardScan")
+      farboundForwardScan(game, playerId, order.vesselId, order.hexId);
+    else if (order.kind === "explorerScan")
+      scanWithExplorationVessel(game, playerId, order.vesselId, order.hexIds);
 }
 
 function resolveCivilianMovement(
@@ -156,23 +167,7 @@ function resolveCivilianMovement(
   const map = mapLibrary[game.mapId];
   for (const { playerId, order } of orders) {
     const player = game.players[playerId];
-    if (order.kind === "explorerMove") {
-      const target = game.hexes.find((hex) => hex.id === order.destination);
-      if (
-        getNeighbors(player.explorer, map).includes(order.destination) &&
-        target?.kind !== "rift"
-      ) {
-        player.explorer = order.destination;
-        if (target && !target.revealed) {
-          target.revealed = true;
-          player.legacyMetrics.revealedHexes[game.era - 1]++;
-          if (target.kind === "anomaly") {
-            player.resources.research++;
-            target.anomalyResolvedBy = playerId;
-          }
-        }
-      }
-    }
+    if (order.kind === "explorerMove") moveExplorationVessel(game, playerId, order.vesselId, order.destination, order.path);
     if (order.kind === "colonyMove") {
       const target = game.hexes.find((hex) => hex.id === order.destination);
       if (
@@ -207,6 +202,7 @@ function resolveLocations(
       continue;
     player.modules--;
     hex.owner = playerId;
+    hex.originalOwner ??= playerId;
     hex.tier = "Outpost";
     player.legacyMetrics.habitatsEstablished[game.era - 1]++;
     if (factionRules(player) === "farbound" && hex.surveyedBy?.includes(playerId)) {
@@ -219,6 +215,16 @@ function resolveLocations(
       )
         player.labor = Math.min(player.laborCap, player.labor + 1);
       player.legacyMetrics.discountedHabitats.push(`era-${game.era}:${hex.id}`);
+      if (
+        player.tech.Exploration >= 4 &&
+        !player.legacyMetrics.frontierLegacyHexes.some((entry) => entry.endsWith(`:${hex.id}`)) &&
+        !player.legacyMetrics.frontierLegacyHexes.some((entry) => entry.startsWith(`era-${game.era}:`))
+      ) {
+        player.legacyMetrics.frontierLegacyHexes.push(`era-${game.era}:${hex.id}`);
+        player.lp += 2;
+        player.legacy.faction += 2;
+        game.log.unshift(`${player.name} gained 2 LP from Frontier Legacy at ${hex.id}.`);
+      }
     }
     game.log.unshift(`${player.name} established an Outpost at ${hex.id}.`);
   }
@@ -248,6 +254,7 @@ function constructionCost(
       return { material: 1, currency: 1, labor: 1 };
     return centerCosts[construction.center];
   }
+  if (construction.type === "exploration") return {};
   return {};
 }
 
@@ -272,6 +279,10 @@ function resolveConstruction(
       buildCivilian(game, playerId, order.habitatId, construction.civilian);
       continue;
     }
+    if (construction.type === "exploration") {
+      buildExplorationVessel(game, playerId, order.habitatId, construction.vessel);
+      continue;
+    }
     const cost = constructionCost(game, playerId, order.habitatId, order);
     if (!habitat?.tier || !cost || !canPay(player, cost)) continue;
     if (
@@ -291,9 +302,11 @@ function resolveConstruction(
     else if (construction.type === "upgrade") {
       habitat.tier = habitat.tier === "Outpost" ? "Colony" : "Metropolis";
       player.legacyMetrics.upgradedHabitats[game.era - 1]++;
+      player.legacyMetrics.habitatDevelopmentHexes[game.era - 1].push(habitat.id);
     } else {
       habitat.centers.push(construction.center);
       player.legacyMetrics.builtCenters[game.era - 1]++;
+      player.legacyMetrics.habitatDevelopmentHexes[game.era - 1].push(habitat.id);
     }
   }
 }
@@ -322,7 +335,7 @@ function resolveTributes(
   game: GameState,
   orders: Array<{ playerId: number; order: SecretOrder }>,
 ) {
-  const target = game.players.length * 3,
+  const target = gateTarget(game),
     cost = tributeCosts[game.era],
     remaining = new Map(
       game.players.map((player) => [player.id, structuredClone(player)]),
@@ -335,7 +348,7 @@ function resolveTributes(
       budget = remaining.get(entry.playerId)!,
       count = accepted.get(entry.playerId) || 0;
     if (
-      (game.era < 4 && (player.eraTributes[game.era - 1] || count > 0)) ||
+      (game.era < finalEra(game) && (player.eraTributes[game.era - 1] || count > 0)) ||
       !canPay(budget, cost)
     )
       continue;
@@ -371,7 +384,16 @@ function produce(game: GameState, playerId: number) {
       ),
   );
   player.labor = player.laborCap;
-  player.resources[factionLibrary[player.faction].homeProduction]++;
+  const defaultHome = factionLibrary[player.faction].homeProduction;
+  const flexible = factionRules(player) === "varkesh"
+    ? (["material", "currency"] as Resource[])
+    : factionRules(player) === "farbound"
+      ? (["research", "currency"] as Resource[])
+      : [defaultHome];
+  const homeProduction = flexible.includes(player.homeProductionChoice || defaultHome)
+    ? (player.homeProductionChoice || defaultHome)
+    : defaultHome;
+  player.resources[homeProduction] += multiplier;
   for (const hex of owned) {
     if (
       economicHexKinds.includes(hex.kind as (typeof economicHexKinds)[number]) &&
@@ -425,6 +447,7 @@ export function resolveSecretOrders(game: GameState) {
         playerId,
         carrierIds: order.carrierIds,
         destination: order.destination,
+        path: order.path,
       })),
   );
   resolveCivilianMovement(game, all);
@@ -437,21 +460,22 @@ export function resolveSecretOrders(game: GameState) {
   recordGameSnapshot(game, game.turn);
 
   if (game.turn % 4 === 0) scoreHiddenEra(game, game.era);
-  if (game.turn >= 16) finalizeGame(game);
+  if (game.turn >= totalTurns(game)) finalizeGame(game);
   else {
     game.turn++;
-    game.era = Math.min(4, Math.ceil(game.turn / 4));
+    game.era = Math.min(finalEra(game), Math.ceil(game.turn / 4));
     processNewTurnDiplomacy(game, game.turn);
     for (const player of game.players) {
       player.disabled = false;
       produce(game, player.id);
       beginFleetTurn(game, player.id);
       beginFactionTurn(game, player.id);
+      beginExplorationTurn(game, player.id);
     }
     game.active = 0;
     game.selected = startingHex(game, 0);
     game.orderProtocol = {
-      phase: "orders",
+      phase: game.spectatorMode ? "orders" : "negotiation",
       turn: game.turn,
       currentPlayer: 0,
       submissions: [],
@@ -469,6 +493,10 @@ export function orderLabel(order: SecretOrder) {
       return `Move ${order.carrierIds.length} carrier${order.carrierIds.length === 1 ? "" : "s"} to ${order.destination}`;
     case "explorerMove":
       return `Explorer to ${order.destination}`;
+    case "explorerScan":
+      return `Public scan ${order.hexIds.join(", ")}`;
+    case "farboundForwardScan":
+      return `Private Forward Scan ${order.hexId}`;
     case "colonyMove":
       return `Colony Ship to ${order.destination}`;
     case "civilianMove":
@@ -490,7 +518,9 @@ export function orderLabel(order: SecretOrder) {
               ? carrierLibrary[order.construction.carrier].name
               : order.construction.type === "civilian"
                 ? civilianLibrary[order.construction.civilian].name
-                : `${order.construction.pairs * 2} Combat Units`} at ${order.habitatId}`;
+                : order.construction.type === "exploration"
+                  ? `${order.construction.vessel} exploration vessel`
+                  : `${order.construction.pairs * 2} Combat Units`} at ${order.habitatId}`;
     case "technology":
       return `Advance ${order.branch}`;
     case "tribute":

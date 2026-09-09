@@ -222,3 +222,24 @@ export async function sendRoomCommandWithRefresh(
     return sendRoomCommand(refreshed, command, commandId);
   }
 }
+
+export async function downloadPlaytestReport(session: RoomSession) {
+  if (session.role !== "host") throw new Error("Only the host can export the complete playtest record.");
+  const response = await fetch(`/api/rooms/${encodeURIComponent(normalizeCode(session.code))}/report`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: session.token }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const payload = (await response.json()) as RoomApiErrorPayload;
+    throw new RoomClientError(payload.error || "Playtest report export failed.", response.status);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `horizon-${session.code}-playtest.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}

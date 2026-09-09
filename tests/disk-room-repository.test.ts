@@ -25,7 +25,7 @@ test("disk rooms survive a repository restart", async (context) => {
   assert.equal(resumed.code, created.code);
   assert.equal(resumed.revision, created.revision);
   assert.equal((await restartedRepository.health()).ok, true);
-  assert.match(await readFile(join(directory, `${created.code}.json`), "utf8"), /"schemaVersion":2/);
+  assert.match(await readFile(join(directory, `${created.code}.json`), "utf8"), /"schemaVersion":5/);
 });
 
 test("disk compare-and-swap permits only one concurrent room revision", async (context) => {

@@ -127,6 +127,7 @@ test("Defensive Pact forces combine deterministically to defend a Habitat", () =
   ally.hex = destination; ally.cu = 2;
   attacker.cu = 2; attacker.movesRemaining = 1;
   game.agreements.push({ id: "defense", type: "defensive", parties: [1, 2], startedTurn: 1 });
+  game.stationingPermissions.push({ hostId: 1, guestId: 2, kind: "defensive" });
   resolveSimultaneousCarrierMoves(game, [{ playerId: 0, carrierIds: [attacker.id], destination }]);
   assert.equal(game.carriers.some((carrier) => carrier.id === attacker.id), false);
   assert.equal(habitat.owner, 1);

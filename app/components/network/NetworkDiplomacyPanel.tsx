@@ -8,6 +8,8 @@ import {
   agreementRules,
   emptyTradeBundle,
   habitatDistance,
+  hasBenefit,
+  hasStationingPermission,
   isContacted,
   technologyBranches,
   technologyCost,
@@ -41,15 +43,17 @@ export default function NetworkDiplomacyPanel({
   playerId,
   busy,
   onCommand,
+  initialTargetId,
 }: {
   game: GameState;
   playerId: number;
   busy: boolean;
   onCommand: (command: RoomCommand) => Promise<void>;
+  initialTargetId?: number;
 }) {
   const player = game.players[playerId];
   const rivals = game.players.filter((candidate) => candidate.id !== playerId);
-  const [targetId, setTargetId] = useState(rivals[0]?.id ?? 0);
+  const [targetId, setTargetId] = useState(initialTargetId ?? rivals[0]?.id ?? 0);
   const [offer, setOffer] = useState<TradeBundle>(emptyTradeBundle);
   const [request, setRequest] = useState<TradeBundle>(emptyTradeBundle);
   const [agreementType, setAgreementType] = useState<AgreementType>("trade");
@@ -101,5 +105,6 @@ export default function NetworkDiplomacyPanel({
     {player.faction === "meridian" && <section className="network-diplomacy-card"><h4>Meridian Brokerage</h4><div className="network-broker-grid"><label>First party<select value={brokerA} onChange={(event) => setBrokerA(Number(event.target.value))}>{rivals.map((rival) => <option key={rival.id} value={rival.id}>{rival.name}</option>)}</select></label><label>Gives<select value={brokerAResource} onChange={(event) => setBrokerAResource(event.target.value as TradableResource)}>{(["material", "currency", "research"] as TradableResource[]).map((resource) => <option key={resource}>{resource}</option>)}</select></label><label>Second party<select value={brokerB} onChange={(event) => setBrokerB(Number(event.target.value))}>{rivals.map((rival) => <option key={rival.id} value={rival.id}>{rival.name}</option>)}</select></label><label>Gives<select value={brokerBResource} onChange={(event) => setBrokerBResource(event.target.value as TradableResource)}>{(["material", "currency", "research"] as TradableResource[]).map((resource) => <option key={resource}>{resource}</option>)}</select></label></div><button className="primary wide" disabled={busy || brokerA === brokerB} onClick={() => { const aGives = emptyTradeBundle(); const bGives = emptyTradeBundle(); aGives[brokerAResource] = 1; bGives[brokerBResource] = 1; void onCommand({ kind: "brokerTrade", a: brokerA, b: brokerB, aGives, bGives }); }}>Broker one-for-one exchange</button></section>}
 
     <section className="network-diplomacy-card proposal-queue"><h4>Incoming Proposals</h4>{incoming.map((proposal) => <div className="network-proposal" key={proposal.id}><span><b>{game.players[proposal.kind === "technology" ? proposal.seller : proposal.from].name}</b><small>{proposalSummary(game, proposal)}</small></span><button className="accept" disabled={busy} onClick={() => void onCommand({ kind: "respondProposal", proposalId: proposal.id, accept: true })}>Accept</button><button disabled={busy} onClick={() => void onCommand({ kind: "respondProposal", proposalId: proposal.id, accept: false })}>Reject</button></div>)}{!incoming.length && <p>No incoming proposals.</p>}<h4>Outgoing Proposals</h4>{outgoing.map((proposal) => <div className="network-proposal" key={proposal.id}><span><b>{proposalSummary(game, proposal)}</b><small>Awaiting response</small></span><button disabled={busy} onClick={() => void onCommand({ kind: "cancelProposal", proposalId: proposal.id })}>Cancel</button></div>)}{!outgoing.length && <p>No outgoing proposals.</p>}</section>
+    {(hasBenefit(game, playerId, target.id, "defensive") || target.faction === "aurelians") && <section className="network-diplomacy-card"><h4>Vessel hosting permissions</h4><p>Permission is directional. A Defensive Pact alone does not authorize co-stationing.</p>{hasBenefit(game, playerId, target.id, "defensive") && <button className="primary wide" disabled={busy} onClick={() => void onCommand({ kind: "setStationingPermission", guestId: target.id, permission: "defensive", allowed: !hasStationingPermission(game, playerId, target.id, "defensive") })}>{hasStationingPermission(game, playerId, target.id, "defensive") ? "Revoke defensive co-stationing" : "Allow defensive co-stationing"}</button>}{target.faction === "aurelians" && <button className="primary wide" disabled={busy} onClick={() => void onCommand({ kind: "setStationingPermission", guestId: target.id, permission: "envoy", allowed: !hasStationingPermission(game, playerId, target.id, "envoy") })}>{hasStationingPermission(game, playerId, target.id, "envoy") ? "Revoke Envoy hosting" : "Allow Envoy hosting"}</button>}</section>}
   </div>;
 }

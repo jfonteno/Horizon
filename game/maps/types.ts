@@ -8,6 +8,7 @@ export type MapDefinition = {
   rows: number;
   columns: number;
   starts: string[];
+  startsByPlayerCount?: Partial<Record<number, string[]>>;
   regions: Record<string, string>;
   blocked: Set<string>;
   tilePool: HexKind[];

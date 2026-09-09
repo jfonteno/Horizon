@@ -61,6 +61,60 @@ npm test
 
 Version 0.17.0 loads validated external maps, factions, and visual assets from `data/content` without rebuilding Horizon. See [docs/CONTENT_PACKS.md](docs/CONTENT_PACKS.md) and the included `content-packs/frontier-example` reference.
 
+## Version 0.20.2: Illustrated Faction Archive
+
+Version 0.20.2 replaces scoreboard initials with the six faction emblems and turns lobby faction selection into a full-screen civilization archive. Players can browse every available faction, read its lore, compare strategic roles, inspect Homeworld production, study detailed abilities and unlock requirements, and review Civilization Legacy objectives before making a server-authoritative selection.
+
+## Version 0.20.1: Larger Standard Board and Vessel Selection
+
+Version 0.20.1 expands the Standard Board into a regular side-length-6 hex with 91 playable hexes. Exploration and Colony Ship clicks now always open their contextual action cards, including during Negotiation, so the interface no longer appears unresponsive before Orders begin. Existing 61-hex rooms retain their original board geometry when loaded.
+
+## Version 0.20.0: Consolidated Playtest Rules
+
+Version 0.20.0 implements the consolidated playtest rulebook except Hazards. It adds selectable four-Era and five-Era formats, the hazard-free 61-hex Standard Board, explicit Negotiation and Orders phases, constructible Exploration hulls with path movement and public scanning, directional Defensive Pact and Envoy permissions, post-combat CU redistribution, flexible faction Homeworld production, dynamic Gate requirements, and the expanded Universal, Hidden, and Civilization Legacy catalogs. Existing saved games and rooms migrate to the four-Era format.
+
+## Version 0.19.2: Contextual Map Commands
+
+Version 0.19.2 makes the tactical map the primary command surface. Selecting a vessel opens only the actions that vessel can perform, selecting a controlled Habitat presents affordable construction choices, and stacked units can be selected individually. Farbound Survey, Habitat establishment, CU transfers, task-force movement, and construction remain connected to the authoritative game rules.
+
+A compact faction scoreboard now shows contact, LP, Order status, agreements, and incoming proposals. Activity entries can return the player to a referenced hex, drafted Orders are numbered on units and destinations, and the pre-seal checklist identifies unresolved objectives, budget errors, available Habitat construction, Gate participation, and unanswered diplomacy.
+
+## Version 0.19.1: Map-First Network Interface
+
+Version 0.19.1 replaces the permanently expanded Network sidebars with a compact collapsible command dock. Diplomacy, Legacy, Economy, and Technology open in large dedicated workspaces over the map. Standings and Turn status are available from the header, and incoming proposals produce prominent clickable alerts.
+
+Bot civilizations now immediately evaluate incoming human trades, agreements, and Technology offers using their strategic priorities and available resources. Human players are required to draw and select a Hidden Legacy objective before taking any other action at the beginning of each Era.
+
+## Version 0.19.0: Complete Network Operations
+
+Version 0.19.0 brings the online interface to gameplay parity with the local interface. Network players can now contribute to the Horizon Gate, use the System Market, inspect and claim every Legacy objective category, establish Habitats with clear eligibility guidance, and use Foundry, Farbound, and Meridian faction operations.
+
+The Network map now presents every available action after a vessel is selected, provides zoom and centering controls, confirms drafted actions, and saves unsealed private Orders in the player's browser for the current room and Turn. Mobile navigation remains reachable in a persistent bottom action bar. The local Military panel is also restored.
+
+## Version 0.18.3: Lobby and Turn Timing
+
+Version 0.18.3 gives the online lobby one authoritative scroll surface and places faction selection directly beside the Ready confirmation. Faction buttons now expose clear selected, available, and reserved states across desktop and mobile layouts.
+
+Hosts may disable the Turn timer or choose a duration in room settings. The deadline is stored and enforced by the authoritative server, survives restarts, pauses with the room, and appears as a live countdown to players. When it expires, civilizations without sealed Orders receive Hold and the complete Turn resolves. Timer resolutions are included in room history, audit verification, and playtest reports.
+
+## Version 0.18.2: Native Windows Hosting
+
+Version 0.18.2 repairs production static-file delivery when Horizon runs directly on Windows. The Windows self-hosted server now serves compiled JavaScript, CSS, images, fonts, and map tiles through a Horizon-owned compatibility layer before requests reach Vinext, avoiding the path-separator mismatch that caused a large unstyled logo and an unusable public page.
+
+The included `Start-Horizon-Windows.cmd` launcher installs dependencies when needed, creates durable data directories, builds the standalone server, verifies both the health endpoint and a compiled stylesheet, starts Horizon on loopback, detects the Cloudflare Windows service, and opens `play.horizongame.us`. Linux, Docker, Cloudflare Workers, room saves, and 0.18.1 faction selection behavior are unchanged.
+
+## Version 0.18.1: Lobby Faction Draft
+
+Version 0.18.1 separates network seat claiming from faction selection. Every human player now claims a numbered seat, chooses any faction not already reserved by another seat, and locks that choice by marking Ready. The host can wait for the other players to choose and take an available faction last.
+
+Faction changes rebuild only the pre-game setup. The room retains its map, seed, player controllers, and randomized starting hex assignment, while applying the selected faction's full starting package. Lobby seat resets release the faction; replacements during a paused game inherit the faction already in play. Existing 0.18.0 rooms migrate with their current factions selected.
+
+## Version 0.18.0: Playtest Operations
+
+Version 0.18.0 makes the network Alpha practical for sustained remote testing. The network board now adapts to phones and tablets, the primary validation scripts run in PowerShell, Command Prompt, macOS, Linux, and Termux, and Cloudflare tooling is optional for standalone development. Hosts receive expanded seat administration and can download a complete JSON playtest report containing setup, standings, historical metrics, diagnostics, and a tamper-evident accepted-command ledger.
+
+New 0.18.0 rooms chain every accepted server command to the resulting authoritative state. Proposal identifiers derive from client command identifiers, which removes a source of nondeterminism and makes exported command histories suitable for repeatable investigation. Rooms created before 0.18.0 remain loadable, but their report correctly marks the audit ledger as incomplete.
+
 ## Version 0.17.2: Randomized Starting Positions
 
 - Shuffle the selected factions among the map's active starting hexes for every new game.
@@ -221,4 +275,6 @@ The standard Shattered Reach map is hazard-free. Hazard concepts remain reserved
 
 Local game progress is stored in the browser. Existing saves migrate to schema version 13 automatically. Room resume credentials stay on the device that claimed the room or seat. Prior manually recorded LP is preserved as Manual LP. Use **New game** to clear the local game save.
 
-For a local production build, run `HORIZON_STANDALONE=1 npm run build` on macOS or Linux. On Windows PowerShell, run `$env:HORIZON_STANDALONE=1; npm run build`.
+For a local production build on Windows, macOS, Linux, or Termux, run `npm run build:self-hosted`. The 0.18.0 task runner sets the standalone environment consistently on every platform.
+
+On Android Termux, keep the repository under the Termux home directory rather than shared storage, then use `npm ci --include=dev` and `npm run dev -- --host 127.0.0.1`. Cloudflare packages are optional in standalone mode, so an unsupported Android `workerd` binary no longer blocks the rest of the installation.

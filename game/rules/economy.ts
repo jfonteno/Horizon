@@ -11,7 +11,8 @@ export const centerCosts:Record<string,Record<string,number>>={
 export const technologyCosts:Record<number,[number,number,number]>={2:[2,1,2],3:[4,2,3],4:[7,3,5]};
 export const tributeCosts:Record<number,Record<string,number>>={
   1:{material:1,currency:1},2:{material:1,currency:1,research:1},
-  3:{material:2,currency:1,research:1,labor:1},4:{material:2,currency:2,research:2,labor:1,influence:1}
+  3:{material:2,currency:1,research:1,labor:1},4:{material:2,currency:2,research:2,labor:1,influence:1},
+  5:{material:2,currency:2,research:2,labor:1,influence:1}
 };
 
 export function canPay(player:PlayerState,cost:Record<string,number>){return Object.entries(cost).every(([key,value])=>(key==="labor"?player.labor:player.resources[key as Resource])>=value)}

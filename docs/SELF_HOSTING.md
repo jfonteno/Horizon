@@ -1,14 +1,29 @@
-# Self-hosting Horizon 0.17.2
+# Self-hosting Horizon 0.20.2
 
-This deployment runs one authoritative Horizon server on a physical Linux host. Room state is stored in atomic JSON files on the host, so games survive container and machine restarts. This release supports one Horizon application replica. Do not scale the `horizon` service above one instance while using disk storage.
+This deployment runs one authoritative Horizon server on Windows or a physical Linux host. Room state is stored in atomic JSON files on the host, so games survive process, container, and machine restarts. This release supports one Horizon application replica. Do not scale Horizon above one instance while using disk storage.
 
 ## Requirements
 
-- A machine with Docker Engine and Docker Compose v2
+- Native Windows: Node.js 22.13.0 or newer
+- Linux or Docker Desktop: Docker Engine and Docker Compose v2
 - A current backup location outside the Horizon project directory
 - Optional: a domain in Cloudflare for public access without opening an inbound router port
 
-## Start on the server
+## Start directly on Windows
+
+Place `Start-Horizon-Windows.cmd` beside `package.json` and double-click it. The launcher installs dependencies when required, builds the standalone server, creates persistent data directories, starts Horizon on `127.0.0.1:3000`, and verifies a compiled stylesheet before opening the site.
+
+For a Cloudflare connector installed as a Windows service, configure the published application service URL as:
+
+```text
+http://127.0.0.1:3000
+```
+
+Keep the Horizon Server window open during play. Stop it with `Ctrl+C`. The Cloudflare connector may run automatically as a Windows service, but Horizon must be launched again after a restart unless it is separately configured as a service or scheduled task.
+
+The Windows compatibility layer introduced in 0.18.2 corrects static asset delivery in Vinext 0.0.50 without modifying installed dependencies. It remains enabled only for native Windows hosting.
+
+## Start with Docker
 
 ```bash
 cp .env.self-host.example .env
@@ -72,6 +87,8 @@ npm test
 docker compose up -d --build
 curl --fail http://127.0.0.1:3000/api/health
 ```
+
+The validation commands are cross-platform. In PowerShell, use `npm.cmd` if the local execution policy blocks `npm.ps1`, for example `npm.cmd test`.
 
 Room files are compatible across process restarts and are migrated through the same room normalization layer used by the multiplayer API. Keep the previous source release and a current backup for rollback.
 

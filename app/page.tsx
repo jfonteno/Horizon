@@ -26,6 +26,7 @@ import { tributeCosts } from "../game/rules/economy";
 import {
   clearGame,
   carrierLibrary,
+  beginSecretOrders,
   civilianLibrary,
   createGame,
   evaluateLegacy,
@@ -49,6 +50,10 @@ import {
   themeIds,
   themeLibrary,
   totalCombatUnits,
+  gameFormats,
+  finalEra,
+  gateTarget,
+  totalTurns,
 } from "../game";
 import { botProfiles, getBotProfile } from "../bots";
 import { explorationIcon, tileAssetFor, type ShipIconType } from "../game/themes/assets";
@@ -65,6 +70,7 @@ import type {
   SecretOrder,
   ThemeId,
   PlayerController,
+  GameFormatId,
 } from "../game";
 
 const LABEL: Record<Kind, string> = {
@@ -105,7 +111,8 @@ export default function Home() {
   const [started, setStarted] = useState(false),
     [count, setCount] = useState(6),
     [chosen, setChosen] = useState<FactionId[]>(factionIds),
-    [selectedMapId, setSelectedMapId] = useState("shattered-reach"),
+    [selectedMapId, setSelectedMapId] = useState("standard-board"),
+    [gameFormat, setGameFormat] = useState<GameFormatId>("four-era"),
     [contentCatalog, setContentCatalog] = useState<ContentCatalog | null>(null),
     [contentError, setContentError] = useState(""),
     [theme, setTheme] = useState<ThemeId>("horizon-base"),
@@ -168,6 +175,10 @@ export default function Home() {
         return next;
       }
       const allBots = next.players.every((player) => player.controller.kind === "bot");
+      if (next.orderProtocol.phase === "negotiation" && allBots) {
+        beginSecretOrders(next);
+        return next;
+      }
       if (next.orderProtocol.phase === "ready" && allBots) {
         resolveSecretOrders(next);
         return next;
@@ -188,10 +199,11 @@ export default function Home() {
     const activePlayer = game.players[game.active];
     const allBots = game.players.every((player) => player.controller.kind === "bot");
     const pendingBotCapture = game.pendingCenterLoss && game.players[game.pendingCenterLoss.playerId].controller.kind === "bot";
+    const shouldNegotiate = game.orderProtocol.phase === "negotiation" && allBots;
     const shouldPlan = game.orderProtocol.phase === "orders" &&
       game.orderProtocol.currentPlayer === game.active && activePlayer.controller.kind === "bot";
     const shouldResolve = game.orderProtocol.phase === "ready" && allBots;
-    if (!shouldPlan && !shouldResolve && !pendingBotCapture) return;
+    if (!shouldNegotiate && !shouldPlan && !shouldResolve && !pendingBotCapture) return;
     if (game.spectatorMode && simulationPaused) return;
     const timer = window.setTimeout(() => {
       advanceBotAutomation();
@@ -222,7 +234,7 @@ export default function Home() {
   const map = mapLibrary[game?.mapId || selectedMapId] || mapLibrary["shattered-reach"],
     p = game?.players[game.active],
     selected = game?.hexes.find((h) => h.id === game.selected),
-    goal = (game?.players.length || count) * 3;
+    goal = game ? gateTarget(game) : (gameFormats[gameFormat].eras - 1) * count;
   const description = (h: Hex) =>
     h.kind === "rift"
       ? "Fractured void"
@@ -568,7 +580,7 @@ export default function Home() {
       id: `tribute-${globalThis.crypto?.randomUUID?.() || Date.now()}`,
       kind: "tribute",
     };
-    const nextDraft = game.era === 4
+    const nextDraft = game.era === finalEra(game)
       ? [...orderDraft, order]
       : [...orderDraft.filter((candidate) => candidate.kind !== "tribute"), order];
     const budget = projectedOrderBudget(game, p.id, nextDraft);
@@ -617,7 +629,7 @@ export default function Home() {
         <div className="stars" />
         <section className="setup-card">
           <img src="/horizon-logo.png" alt="Horizon" className="logo" />
-          <p className="kicker">SHATTERED REACH PLAYTEST // VERSION 0.17.2</p>
+          <p className="kicker">HORIZON PLAYTEST // VERSION 0.20.2</p>
           <h1>Command the fleets of a broken system.</h1>
           <p className="lede">
             A deterministic strategy playtest with secret simultaneous Orders,
@@ -635,6 +647,16 @@ export default function Home() {
                     onClick={() => setCount(n)}
                   >
                     {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label>Game format</label>
+              <div className="segmented">
+                {(Object.keys(gameFormats) as GameFormatId[]).map((id) => (
+                  <button key={id} className={gameFormat === id ? "active" : ""} onClick={() => setGameFormat(id)}>
+                    {gameFormats[id].name}
                   </button>
                 ))}
               </div>
@@ -692,10 +714,11 @@ export default function Home() {
               </div>;
             })}
           </div>
+          <small className="fineprint">NETWORK ROOMS // Human seats choose their factions after joining the lobby. Setup choices provide bot defaults.</small>
           <button
             className="primary launch"
             onClick={() => {
-              setGame(createGame(count, chosen, selectedMapId, theme, undefined, configuredControllers()));
+              setGame(createGame(count, chosen, selectedMapId, theme, undefined, configuredControllers(), false, gameFormat));
               setStarted(true);
             }}
           >
@@ -710,13 +733,13 @@ export default function Home() {
               setSeatControllers(Array(6).fill("meta-analyst"));
               setSimulationPaused(false);
               setSimulationSpeed(650);
-              setGame(createGame(6, factionIds.slice(0, 6), "shattered-reach", theme, undefined, controllers, true));
+              setGame(createGame(6, factionIds.slice(0, 6), "standard-board", theme, undefined, controllers, true, gameFormat));
               setStarted(true);
             }}
           ><span>WATCH ALL SIX FACTIONS</span><b>Run spectator simulation</b><small>Meta Analyst controls every civilization. Pause, step, or change speed at any time.</small></button>
           <RoomSetup
             gameFactory={() =>
-              createGame(count, chosen, selectedMapId, theme, undefined, configuredControllers())
+              createGame(count, chosen, selectedMapId, theme, undefined, configuredControllers(), false, gameFormat)
             }
             startHost={(session) => {
               setGame(session.game);
@@ -727,7 +750,7 @@ export default function Home() {
           />
           {contentCatalog && contentCatalog.packs.length > 0 && <small className="fineprint">CONTENT PACKS // {contentCatalog.packs.map((pack) => `${pack.name} ${pack.version}`).join(" · ")}</small>}
           {(contentError || contentCatalog?.issues.length) ? <small className="fineprint room-error">{contentError || `${contentCatalog!.issues.length} content pack(s) were rejected. Check server logs.`}</small> : null}
-          <small className="fineprint">Progress saves automatically. Version 0.17.2 remains compatible with earlier 0.17 playtest saves.</small>
+          <small className="fineprint">Progress saves automatically. Version 0.20.2 preserves earlier rooms and their original board geometry.</small>
         </section>
       </main>
     );
@@ -761,13 +784,14 @@ export default function Home() {
       className="game-shell"
       data-theme={game.themeId}
       data-spectator={game.spectatorMode}
+      data-map-columns={map.columns}
       style={{ "--player": p!.color } as React.CSSProperties}
     >
       <header className="topbar">
         <img src="/horizon-logo.png" alt="Horizon" />
         <div className="turn-id">
           <span>ERA {game.era}</span>
-          <strong>TURN {game.turn} / 16</strong>
+          <strong>TURN {game.turn} / {totalTurns(game)}</strong>
         </div>
         <div className="gate-mini">
           <div>
@@ -825,7 +849,7 @@ export default function Home() {
           <nav>
             {[
               ["orders", "Orders"],
-              ["command", "Command"],
+              ["command", "Military"],
               ["build", "Build"],
               ["tech", "Tech"],
               ["gate", "Gate"],
@@ -838,7 +862,7 @@ export default function Home() {
               <button
                 key={id}
                 className={panel === id ? "active" : ""}
-                disabled={id === "command" || game.spectatorMode}
+                disabled={game.spectatorMode}
                 onClick={() => {
                   setPanel(id);
                   setMapIntent(null);

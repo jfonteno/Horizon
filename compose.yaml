@@ -4,7 +4,7 @@ services:
   horizon:
     build:
       context: .
-    image: horizon-shattered-reach:0.17.2
+    image: horizon-shattered-reach:0.19.2
     restart: unless-stopped
     user: "${HORIZON_UID:-1000}:${HORIZON_GID:-1000}"
     environment:

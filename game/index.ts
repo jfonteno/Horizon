@@ -10,6 +10,8 @@ export * from "./rules/faction-operations";
 export * from "./rules/orders";
 export * from "./rules/purchases";
 export * from "./rules/economy";
+export * from "./rules/exploration";
+export * from "./rules/format";
 export * from "./server";
 export * from "./ai";
 export * from "./analytics";

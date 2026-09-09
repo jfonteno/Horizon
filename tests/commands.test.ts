@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createGame, executeRoomCommand, MemoryRoomRepository, RoomService, validateRoomCommand } from "../game/index";
+import { createGame, drawHiddenChoices, executeRoomCommand, MemoryRoomRepository, RoomService, selectHiddenLegacy, validateRoomCommand } from "../game/index";
 
 const factions = ["farbound", "helix", "foundry", "aurelians"] as const;
 
@@ -11,6 +11,10 @@ function fixture() {
   game.players[0].resources.material = 4;
   game.players[1].resources.currency = 4;
   game.players.forEach((player) => { player.resources.influence = 6; });
+  game.players.forEach((player) => {
+    drawHiddenChoices(game, player.id, game.era);
+    selectHiddenLegacy(game, player.id, player.hiddenLegacy[game.era].choices[0]);
+  });
   return { repository, service, game };
 }
 
@@ -66,6 +70,45 @@ test("diplomacy proposals remain private and only the recipient can respond", as
   assert.equal(accepted.ok, true);
   assert.equal(accepted.session?.game.players[1].resources.material, 1);
   assert.equal(accepted.session?.game.players[1].resources.currency, 3);
+});
+
+test("bot civilizations immediately evaluate incoming human trade proposals", async () => {
+  const { repository, service, game } = fixture();
+  game.players[0].tech.Economy = 4;
+  game.players[1].controller = { kind: "bot", profileId: "strategic-director" };
+  const startingCurrency = game.players[0].resources.currency;
+  const host = await activate(repository, service, await service.create(game, "Commander", "network"));
+  const proposed = await executeRoomCommand(repository, {
+    code: host.code, token: host.token, expectedRevision: host.revision,
+    command: { kind: "proposeTrade", to: 1, offer: { material: 2, currency: 0, research: 0, labor: 0 }, request: { material: 0, currency: 1, research: 0, labor: 0 } },
+  });
+  assert.equal(proposed.ok, true);
+  assert.equal(proposed.session?.game.proposals[0]?.status, "accepted");
+  assert.equal(proposed.session?.game.players[0].resources.currency, startingCurrency + 1);
+  assert.match(proposed.botMessages?.join(" ") || "", /Accepted trade proposal/i);
+});
+
+test("network players must select a Hidden objective before other Era actions", async () => {
+  const repository = new MemoryRoomRepository();
+  const service = new RoomService(repository);
+  const game = createGame(4, [...factions], "shattered-reach", "horizon-base", 15012);
+  const host = await activate(repository, service, await service.create(game, "Commander", "network"));
+  const blocked = await executeRoomCommand(repository, {
+    code: host.code, token: host.token, expectedRevision: host.revision,
+    command: { kind: "marketExchange", give: "material", get: "currency" },
+  });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.message, /Hidden Legacy objective/i);
+  const drawn = await executeRoomCommand(repository, {
+    code: host.code, token: host.token, expectedRevision: host.revision,
+    command: { kind: "drawHidden" },
+  });
+  const cardId = drawn.session!.game.players[0].hiddenLegacy[1].choices[0];
+  const selected = await executeRoomCommand(repository, {
+    code: host.code, token: host.token, expectedRevision: drawn.session!.revision,
+    command: { kind: "selectHidden", cardId },
+  });
+  assert.equal(selected.ok, true);
 });
 
 test("network Farbound survey is private, once per Turn, and available before Orders seal", async () => {
@@ -152,12 +195,16 @@ test("multiplayer lobby readiness, host controls, and command idempotency", asyn
   ]);
   const host = await service.create(game, "Commander", "network");
   assert.equal(host.summary.status, "lobby");
+  const selected = await executeRoomCommand(repository, {
+    code: host.code, token: host.token, expectedRevision: host.revision, commandId: "select-once",
+    command: { kind: "selectFaction", factionId: "farbound" },
+  });
   const ready = await executeRoomCommand(repository, {
-    code: host.code, token: host.token, expectedRevision: host.revision, commandId: "ready-once",
+    code: host.code, token: host.token, expectedRevision: selected.session!.revision, commandId: "ready-once",
     command: { kind: "setReady", ready: true },
   });
   const duplicate = await executeRoomCommand(repository, {
-    code: host.code, token: host.token, expectedRevision: host.revision, commandId: "ready-once",
+    code: host.code, token: host.token, expectedRevision: selected.session!.revision, commandId: "ready-once",
     command: { kind: "setReady", ready: true },
   });
   assert.equal(duplicate.session?.revision, ready.session?.revision);

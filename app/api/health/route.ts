@@ -7,7 +7,7 @@ export async function GET() {
     {
       ok: storage.ok,
       service: "horizon",
-      version: "0.17.2",
+      version: "0.20.2",
       storage: repository.kind,
       detail: storage.ok ? undefined : storage.detail,
       checkedAt: new Date().toISOString(),

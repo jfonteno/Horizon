@@ -16,6 +16,12 @@ export type FactionDefinition = {
   role: string;
   color: string;
   blurb: string;
+  lore?: string[];
+  abilities?: Array<{
+    name: string;
+    summary: string;
+    unlock?: string;
+  }>;
   homeProduction: Resource;
   objectives: [string, string, string];
   starting?: FactionStartingPackage;

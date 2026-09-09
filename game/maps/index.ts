@@ -1,9 +1,15 @@
 import { shatteredReach } from "./shattered-reach";
+import { standardBoard } from "./standard-board";
+import { standardBoard61 } from "./standard-board-61";
 import type { MapDefinition, MapId, PortableMapDefinition } from "./types";
 
-const coreMapIds = new Set([shatteredReach.id]);
-export const mapLibrary: Record<MapId, MapDefinition> = { "shattered-reach": shatteredReach };
-export const mapIds: MapId[] = [shatteredReach.id];
+const coreMapIds = new Set([shatteredReach.id, standardBoard.id, standardBoard61.id]);
+export const mapLibrary: Record<MapId, MapDefinition> = {
+  "standard-board": standardBoard,
+  "standard-board-61": standardBoard61,
+  "shattered-reach": shatteredReach,
+};
+export const mapIds: MapId[] = [standardBoard.id, shatteredReach.id];
 
 export function registerMap(definition: MapDefinition | PortableMapDefinition) {
   const hydrated: MapDefinition = {

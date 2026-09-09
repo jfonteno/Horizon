@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Horizon: Shattered Reach",
-  description: "Horizon 0.5.0, a local hot-seat playtest of fleet operations, diplomacy, and deterministic warfare on Shattered Reach.",
+  description: "Horizon 0.20.2, a persistent online strategy playtest with illustrated faction selection.",
   other: { "codex-preview": "development" },
 };
 

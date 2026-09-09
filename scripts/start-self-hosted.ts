@@ -1,8 +1,10 @@
 import { startProdServer } from "vinext/server/prod-server";
+import { resolve } from "node:path";
 import { DiskRoomRepository } from "../game/server/disk-room-repository";
 import { setRoomRepository } from "../game/server/runtime";
 import { loadContentPacks } from "../game/content/node-loader";
 import { setContentCatalog } from "../game/content/runtime";
+import { installWindowsStaticAssetCompatibility } from "../game/server/windows-static-assets";
 
 const port = Number.parseInt(process.env.PORT || "3000", 10);
 const host = process.env.HOST || "0.0.0.0";
@@ -23,8 +25,10 @@ for (const issue of content.issues)
   console.warn(`[horizon] Content pack ${issue.pack || "unknown"} rejected: ${issue.message}`);
 
 const { server } = await startProdServer({ port, host, outDir: "./dist" });
+const windowsAssets = installWindowsStaticAssetCompatibility(server, resolve("./dist/client"));
 console.log(`[horizon] Durable room storage ready (${repository.kind}).`);
 console.log(`[horizon] ${content.packs.length} external content pack(s) active.`);
+if (windowsAssets) console.log("[horizon] Native Windows static asset compatibility active.");
 
 let closing = false;
 async function shutdown(signal: string) {

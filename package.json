@@ -1,6 +1,6 @@
 {
   "name": "horizon-shattered-reach",
-  "version": "0.17.2",
+  "version": "0.20.2",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -8,18 +8,18 @@
   "scripts": {
     "install:ci": "bash scripts/install-ci.sh",
     "dev": "vite",
-    "build": "bash scripts/build-verified.sh",
-    "build:self-hosted": "HORIZON_STANDALONE=1 npm run build",
+    "build": "node scripts/task-runner.mjs build",
+    "build:self-hosted": "node scripts/task-runner.mjs build --standalone",
     "start": "vinext start",
     "start:self-hosted": "node --import tsx scripts/start-self-hosted.ts",
     "backup:self-hosted": "bash scripts/backup-self-hosted.sh",
     "restore:self-hosted": "bash scripts/restore-self-hosted.sh",
-    "test": "HORIZON_STANDALONE=1 npm run build && node --import tsx --test tests/*.test.ts",
+    "test": "node scripts/task-runner.mjs test",
     "simulate:ai": "node --import tsx scripts/simulate-ai.ts",
-    "validate:artifact": "bash scripts/validate-artifact.sh",
+    "validate:artifact": "node scripts/task-runner.mjs validate-artifact",
     "validate:content": "node --import tsx scripts/validate-content.ts",
-    "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
-    "typecheck": "bash scripts/sites-env.sh -- tsc --noEmit --pretty false",
+    "lint": "node scripts/task-runner.mjs lint",
+    "typecheck": "node scripts/task-runner.mjs typecheck",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
     "package:release": "bash scripts/package-release.sh"
   },
@@ -32,7 +32,6 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "4.20260702.1",
-    "@cloudflare/vite-plugin": "1.37.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
@@ -46,7 +45,10 @@
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
-    "vite": "8.0.13",
+    "vite": "8.0.13"
+  },
+  "optionalDependencies": {
+    "@cloudflare/vite-plugin": "1.37.1",
     "wrangler": "4.92.0"
   },
   "type": "module",

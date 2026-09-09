@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import NetworkGameBoard from "../../components/network/NetworkGameBoard";
-import { forgetRoomIdentity, loadRoomIdentity, pollRoomSession, resumeNetworkRoom, sendRoomCommandWithRefresh, spectateNetworkRoom } from "../../lib/room-client";
+import { downloadPlaytestReport, forgetRoomIdentity, loadRoomIdentity, pollRoomSession, resumeNetworkRoom, sendRoomCommandWithRefresh, spectateNetworkRoom } from "../../lib/room-client";
 import type { RoomCommand, RoomSession } from "../../../game";
 import { loadInstalledContent } from "../../lib/content-client";
 
@@ -58,13 +58,30 @@ export default function NetworkRoomPage() {
     const current = sessionRef.current;
     if (!current || current.role === "spectator") return;
     setBusy(true); setError(""); setMessage("");
-    try { const next = await sendRoomCommandWithRefresh(current, command); accept(next); setMessage(`${command.kind} accepted at revision ${next.revision}.`); }
+    try {
+      const next = await sendRoomCommandWithRefresh(current, command);
+      accept(next);
+      if (["proposeTrade", "proposeAgreement", "proposeTechnology"].includes(command.kind)) {
+        const targetId = command.kind === "proposeTechnology" ? command.buyer : command.kind === "proposeTrade" || command.kind === "proposeAgreement" ? command.to : -1;
+        const bot = next.game.players[targetId]?.controller.kind === "bot";
+        const response = [...next.game.proposals].reverse().find((proposal) => proposal.createdTurn === next.game.turn && (proposal.kind === "technology" ? proposal.buyer === targetId : proposal.to === targetId));
+        setMessage(bot && response ? `${next.game.players[targetId].name} ${response.status} the proposal.` : `${command.kind} accepted at revision ${next.revision}.`);
+      } else setMessage(`${command.kind} accepted at revision ${next.revision}.`);
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : "The server rejected that action."); try { const latest = await pollRoomSession(current); if (latest) accept(latest); } catch { setConnection("offline"); } }
     finally { setBusy(false); }
   };
   const leave = () => { if (session?.role !== "spectator") forgetRoomIdentity(code); router.push("/"); };
+  const exportReport = async () => {
+    const current = sessionRef.current;
+    if (!current) return;
+    setBusy(true); setError("");
+    try { await downloadPlaytestReport(current); setMessage("Playtest report downloaded with audit verification data."); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Playtest report export failed."); }
+    finally { setBusy(false); }
+  };
 
   if (!session) return <main className="remote-room"><section className="remote-card"><img src="/horizon-logo.png" alt="Horizon" /><p>NETWORK OPERATIONS // ROOM {code || "UNKNOWN"}</p><h1>{connection === "syncing" ? "Connecting…" : "Room unavailable"}</h1>{error && <p className="room-error">{error}</p>}<div className="remote-actions"><button className="primary" onClick={() => void refresh(false)}>Retry private seat</button><button onClick={() => void refresh(true)}>Watch as spectator</button><button onClick={() => router.push("/")}>Return</button></div></section></main>;
 
-  return <NetworkGameBoard session={session} connection={connection} busy={busy} message={message} error={error} onCommand={runCommand} onRefresh={() => void refresh(session.role === "spectator")} onLeave={leave} spectatorPaused={spectatorPaused} pollMs={pollMs} onToggleSpectator={() => setSpectatorPaused((value) => !value)} onPollMs={setPollMs} />;
+  return <NetworkGameBoard session={session} connection={connection} busy={busy} message={message} error={error} onCommand={runCommand} onRefresh={() => void refresh(session.role === "spectator")} onLeave={leave} onExportReport={() => void exportReport()} spectatorPaused={spectatorPaused} pollMs={pollMs} onToggleSpectator={() => setSpectatorPaused((value) => !value)} onPollMs={setPollMs} />;
 }

@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import { useEffect, useState } from "react";
-import type { GameState, RoomIdentity, RoomSession } from "../../game";
+import { gateTarget, type GameState, type RoomIdentity, type RoomSession } from "../../game";
 import { saveRoomIdentity } from "../lib/room-client";
 
 const ROOM_KEY = "horizon-room-identity-v1";
@@ -81,7 +81,7 @@ export function RoomSetup({
     <section className="room-setup">
       <div className="room-heading">
         <div>
-          <span>0.17.2 MULTIPLAYER BETA</span>
+          <span>0.20.2 NETWORK PLAYTEST</span>
           <h3>Persistent online game rooms</h3>
         </div>
         <small>
@@ -91,7 +91,7 @@ export function RoomSetup({
       <div className="room-setup-grid">
         <div>
           <b>Host a room</b>
-          <p>Create an invitation code and publish this device&apos;s game.</p>
+          <p>Create an invitation code. Human players choose factions after claiming their seats.</p>
           <button
             className="primary"
             disabled={busy}
@@ -284,7 +284,7 @@ export function RemoteRoomView({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const player = session.game.players[session.playerId || 0];
-  const goal = session.game.players.length * 3;
+  const goal = gateTarget(session.game);
 
   const refresh = async () => {
     setBusy(true);

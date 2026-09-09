@@ -37,15 +37,15 @@ export function loadGame(): GameState | null {
       });
     return {
       ...legacy,
-      schemaVersion: 14,
-      mapId: legacy.mapId || "shattered-reach",
+      schemaVersion: 15,
+      format: legacy.format || "four-era",
+      mapId: legacy.mapId === "standard-board" && legacy.hexes.filter((hex) => hex.kind !== "rift").length === 61
+        ? "standard-board-61"
+        : legacy.mapId || "shattered-reach",
       contentPacks: legacy.contentPacks || [],
       themeId: legacy.themeId || "horizon-base",
-      hexes: (schemaVersion < 3
-        ? legacy.hexes.map((hex) =>
-            hex.kind === "hazard" ? { ...hex, kind: "empty" as const } : hex,
-          )
-        : legacy.hexes
+      hexes: legacy.hexes.map((hex) =>
+        hex.kind === "hazard" ? { ...hex, kind: "empty" as const } : hex,
       ).map((hex) => ({
         ...hex,
         pendingCombat: hex.pendingCombat || [],
@@ -73,6 +73,19 @@ export function loadGame(): GameState | null {
               metrics.productionAmounts || defaults.productionAmounts,
             givenResearch: metrics.givenResearch || defaults.givenResearch,
           },
+          eraTributes: [...(player.eraTributes || []), 0, 0, 0, 0, 0].slice(0, 5),
+          explorationVessels: player.explorationVessels?.length
+            ? player.explorationVessels
+            : [{
+                id: `exploration-${player.id}-1`,
+                owner: player.id,
+                type: "exploration" as const,
+                hex: player.explorer,
+                readyTurn: legacy.turn || 1,
+                movesRemaining: legacy.moves?.explorer ?? 1,
+                publicRevealsTurn: 0,
+                publicReveals: 0,
+              }],
           civilizationClaims: player.civilizationClaims || [],
           hiddenLegacy: player.hiddenLegacy || {},
           privateSurveys: player.privateSurveys || [],
@@ -104,7 +117,9 @@ export function loadGame(): GameState | null {
       agreements: legacy.agreements || [],
       proposals: legacy.proposals || [],
       pendingLabor: legacy.pendingLabor || [],
+      stationingPermissions: legacy.stationingPermissions || [],
       universalClaims: legacy.universalClaims || [],
+      pendingCombatRedistributions: legacy.pendingCombatRedistributions || [],
       botReports: (legacy.botReports || []).map((report) => ({ ...report, strategicForecast: report.strategicForecast || [] })),
       botMemory: legacy.botMemory || [],
       spectatorMode: legacy.spectatorMode || false,

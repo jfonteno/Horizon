@@ -33,7 +33,7 @@ function sealAll(state: GameState, orders: SecretOrder[][]) {
 
 test("submitting Orders ends the active seat and centers the next civilization", () => {
   const state = game(9000);
-  assert.equal(state.orderProtocol.phase, "orders");
+  assert.equal(state.orderProtocol.phase, "negotiation");
   assert.equal(state.active, 0);
   assert.equal(submitSecretOrders(state, 0, []).ok, true);
   assert.equal(state.active, 1);

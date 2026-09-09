@@ -2,6 +2,7 @@ import { factionLibrary, factionRules } from "../factions";
 import type { GameState, PlayerState, Resource, SecretOrder } from "../types";
 import { tributeCosts } from "../rules/economy";
 import type { BotOpponentModel, BotProfile, BotStrategicPlan } from "./types";
+import { finalEra, gateTarget, totalTurns } from "../rules/format";
 
 const resources: Resource[] = ["material", "currency", "research", "influence"];
 
@@ -21,24 +22,24 @@ function productionPerTurn(game: GameState, playerId: number) {
 
 function futureContributionCosts(game: GameState, player: PlayerState, count: number) {
   const costs: Record<Resource, number>[] = [];
-  for (let era = game.era; era <= 3 && costs.length < count; era++) {
+  for (let era = game.era; era < finalEra(game) && costs.length < count; era++) {
     if (era === game.era && player.eraTributes[era - 1]) continue;
     costs.push({ material: tributeCosts[era].material || 0, currency: tributeCosts[era].currency || 0,
       research: tributeCosts[era].research || 0, influence: tributeCosts[era].influence || 0 });
   }
   while (costs.length < count) costs.push({
-    material: tributeCosts[4].material || 0,
-    currency: tributeCosts[4].currency || 0,
-    research: tributeCosts[4].research || 0,
-    influence: tributeCosts[4].influence || 0,
+    material: tributeCosts[finalEra(game)].material || 0,
+    currency: tributeCosts[finalEra(game)].currency || 0,
+    research: tributeCosts[finalEra(game)].research || 0,
+    influence: tributeCosts[finalEra(game)].influence || 0,
   });
   return costs;
 }
 
 function projectedContributionCapacity(game: GameState, player: PlayerState) {
-  const turns = Math.max(0, 16 - game.turn), production = productionPerTurn(game, player.id);
+  const turns = Math.max(0, totalTurns(game) - game.turn), production = productionPerTurn(game, player.id);
   const stock = Object.fromEntries(resources.map((resource) => [resource, player.resources[resource] + production[resource] * turns])) as Record<Resource, number>;
-  const maximum = Math.min(6, Math.max(0, game.players.length * 3 - game.gate));
+  const maximum = Math.min(8, Math.max(0, gateTarget(game) - game.gate));
   const costs = futureContributionCosts(game, player, maximum);
   let affordable = 0;
   for (const cost of costs) {
@@ -70,14 +71,14 @@ export function classifyOpponent(model: Omit<BotOpponentModel, "archetypes">, av
 }
 
 export function createStrategicPlan(game: GameState, playerId: number, profile: BotProfile): BotStrategicPlan {
-  const player = game.players[playerId], target = game.players.length * 3, remaining = Math.max(0, target - game.gate);
-  const fairShare = Math.max(0, 3 - player.tributes);
+  const player = game.players[playerId], target = gateTarget(game), remaining = Math.max(0, target - game.gate);
+  const fairShare = Math.max(0, finalEra(game) - 1 - player.tributes);
   const personalContributionTarget = Math.min(remaining, Math.max(fairShare, Math.ceil(remaining / game.players.length)));
   const costs = futureContributionCosts(game, player, Math.max(1, personalContributionTarget));
   const reserve = costs[0] || { material: 0, currency: 0, research: 0, influence: 0 };
   const followupReserve = costs[1] || { material: 0, currency: 0, research: 0, influence: 0 };
-  const contributionDueTurn = game.era < 4 && !player.eraTributes[game.era - 1] ? game.era * 4 : Math.min(16, (game.era + 1) * 4);
-  const horizonTurns = Math.min(profile.planning.forecastHorizon, Math.max(0, 16 - game.turn));
+  const contributionDueTurn = game.era < finalEra(game) && !player.eraTributes[game.era - 1] ? game.era * 4 : Math.min(totalTurns(game), (game.era + 1) * 4);
+  const horizonTurns = Math.min(profile.planning.forecastHorizon, Math.max(0, totalTurns(game) - game.turn));
   const production = productionPerTurn(game, playerId);
   const projectedDeficits: BotStrategicPlan["projectedDeficits"] = {};
   for (const resource of resources) {
@@ -95,7 +96,7 @@ export function createStrategicPlan(game: GameState, playerId: number, profile: 
     generatedTurn: game.turn,
     horizonTurns,
     doctrine: doctrine(player),
-    gateEmergency: gateConfidence < profile.planning.minimumGateConfidence || remaining > Math.max(0, 16 - game.turn) * game.players.length / 2,
+    gateEmergency: gateConfidence < profile.planning.minimumGateConfidence || remaining > Math.max(0, totalTurns(game) - game.turn) * game.players.length / 2,
     gateConfidence,
     collectiveProjectedTributes,
     personalContributionTarget,

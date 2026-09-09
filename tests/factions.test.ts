@@ -47,8 +47,8 @@ test("Meridian Brokerage exchanges resources and pays once per pair each Turn",(
   assert.equal(brokerTrade(game,0,1,2,a,b).ok,true);assert.equal(game.players[0].resources.currency,3);assert.equal(game.players[1].resources.currency,3);assert.equal(game.players[2].resources.material,2);assert.equal(brokerTrade(game,0,1,2,a,b).ok,false);
 });
 
-test("Meridian Economic Salvage is atomic and converts exactly 4 stationed CU",()=>{
-  const game=createGame(2,["meridian","helix"],"shattered-reach","horizon-base",7004),p=game.players[0],home=game.hexes.find(h=>h.owner===0)!;p.tech.Economy=3;home.combat=3;assert.equal(economicSalvage(game,0).ok,false);assert.equal(home.combat,3);home.combat=5;assert.equal(economicSalvage(game,0).ok,true);assert.equal(home.combat,1);
+test("Meridian Economic Salvage removes exactly 4 controlled CU, including fleet-loaded units",()=>{
+  const game=createGame(2,["meridian","helix"],"shattered-reach","horizon-base",7004),p=game.players[0],home=game.hexes.find(h=>h.owner===0)!;p.tech.Economy=3;home.combat=1;game.carriers.find(c=>c.owner===0)!.cu=2;assert.equal(economicSalvage(game,0).ok,false);home.combat=3;assert.equal(economicSalvage(game,0).ok,true);assert.equal(home.combat,0);assert.equal(game.carriers.find(c=>c.owner===0)!.cu,1);
 });
 
 test("completed faction systems award Civilization Legacy automatically",()=>{
