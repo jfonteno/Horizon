@@ -46,7 +46,16 @@ echo.
 
 if not exist "data\rooms" mkdir "data\rooms"
 if not exist "data\content" mkdir "data\content"
+if not exist "data\accounts" mkdir "data\accounts"
 if not exist "backups" mkdir "backups"
+
+if exist "horizon-auth.env" (
+  for /f "usebackq eol=# tokens=1,* delims==" %%A in ("horizon-auth.env") do if not "%%~A"=="" set "%%~A=%%~B"
+)
+if not defined HORIZON_AUTH_SECRET (
+  for /f "delims=" %%S in ('node scripts\ensure-auth-secret.mjs "data\auth-secret"') do set "HORIZON_AUTH_SECRET=%%S"
+)
+if not defined HORIZON_STEAM_SIGNIN set "HORIZON_STEAM_SIGNIN=enabled"
 
 set "NEEDS_SETUP=0"
 if /I "%~1"=="--rebuild" set "NEEDS_SETUP=1"
@@ -87,6 +96,8 @@ set "HOST=127.0.0.1"
 set "PORT=3000"
 set "HORIZON_DATA_DIR=%CD%\data\rooms"
 set "HORIZON_CONTENT_DIR=%CD%\data\content"
+set "HORIZON_ACCOUNT_DIR=%CD%\data\accounts"
+set "HORIZON_OPERATIONS_PATH=%CD%\data\operations\settings.json"
 
 node scripts\open-horizon-when-ready.mjs --check-once >nul 2>&1
 if not errorlevel 1 goto :already_running

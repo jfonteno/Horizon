@@ -16,6 +16,7 @@ export default function BotIntelligencePanel({ game }: { game: GameState }) {
   const player = game.players[report.playerId], revealed = reportRevealed(game, report);
   const hiddenState = player.hiddenLegacy[report.era], objectiveRevealed = hiddenState?.scored;
   const objective = objectiveRevealed ? hiddenLegacyDeck.find((card) => card.id === report.hiddenObjectiveId) : undefined;
+  const visibleGoals = (report.goalAnalysis || []).filter((goal) => objectiveRevealed || !goal.startsWith("hidden:"));
   return <section className="ai-report">
     <div className="section-title"><span>AI analysis</span><small>{report.profileName}</small></div>
     <div className="ai-report-head"><i style={{background:player.color}}/><div><b>{player.name}</b><span>Turn {report.turn} · {Math.round(report.confidence*100)}% confidence</span></div></div>
@@ -33,6 +34,7 @@ export default function BotIntelligencePanel({ game }: { game: GameState }) {
     <details>
       <summary>Objective model</summary>
       <p>{objective ? `${objective.name}: ${report.hiddenObjectiveReason}` : "The selected Hidden objective and its reasoning remain private until Era scoring."}</p>
+      {visibleGoals.map((goal,index)=><p key={`${goal}-${index}`}>{goal}</p>)}
     </details>
     <details>
       <summary>Threats and counterplay</summary>

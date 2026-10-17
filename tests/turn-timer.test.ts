@@ -59,6 +59,21 @@ test("an expired timer gives missing humans Hold and resolves the Turn", async (
   assert.equal((await service.resume(host.code, host.token)).summary.turn, 2);
 });
 
+test("an expired timer seals a synchronized private draft before using Hold", async () => {
+  const { repository, service, host } = await startedTimedRoom();
+  let current = await service.resume(host.code, host.token);
+  current = (await executeRoomCommand(repository, { code: host.code, token: host.token, expectedRevision: current.revision, command: { kind: "drawHidden" } })).session!;
+  const cardId = current.game.players[0].hiddenLegacy[1].choices[0];
+  current = (await executeRoomCommand(repository, { code: host.code, token: host.token, expectedRevision: current.revision, command: { kind: "selectHidden", cardId } })).session!;
+  current = (await executeRoomCommand(repository, { code: host.code, token: host.token, expectedRevision: current.revision, command: { kind: "saveDraft", orders: [{ id: "saved-timer-order", kind: "hold", label: "Saved private plan" }] } })).session!;
+  assert.equal(current.privateDraft?.[0]?.id, "saved-timer-order");
+  const room = (await repository.get(host.code))!;
+  assert.equal(await reconcileExpiredTurnTimer(repository, host.code, Date.parse(room.turnDeadlineAt!) + 1), true);
+  const after = (await repository.get(host.code))!;
+  assert.equal(after.game.turn, 2);
+  assert.match(after.events.at(-1)!.message, /saved drafts were submitted/i);
+});
+
 test("pausing preserves the timer and resuming restores a deadline", async () => {
   const { repository, service, host } = await startedTimedRoom();
   let current = await service.resume(host.code, host.token);

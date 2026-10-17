@@ -54,14 +54,23 @@ if not exist "node_modules\.bin\vite.cmd" (
   )
 )
 
+set HORIZON_STANDALONE=1
+node.exe "%~dp0scripts\ensure-local-build.mjs"
+if errorlevel 1 (
+  echo ERROR: Horizon could not prepare its production build.
+  pause
+  exit /b 1
+)
+
 echo Starting the local Horizon server...
 echo The game will open at http://localhost:3000
 echo Keep this window open while playing.
 echo.
 
-set HORIZON_STANDALONE=1
+set HOST=127.0.0.1
+set PORT=3000
 start "Horizon Browser Launcher" /b node.exe "%~dp0scripts\open-horizon-when-ready.mjs"
-call npm.cmd run dev -- --host 127.0.0.1 --port 3000
+call npm.cmd run start:self-hosted
 
 set HORIZON_EXIT=%ERRORLEVEL%
 echo.

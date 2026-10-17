@@ -1,0 +1,5 @@
+import { createOAuthState, oauthCookie, providerAuthorizationUrl, type ExternalProvider } from "../../../../game/server/providers";
+import { requireAccount } from "../../../../game/server/account-auth";
+import { enforceRateLimit } from "../../../../game/server/rate-limit";
+
+export async function GET(request:Request){try{await enforceRateLimit(request,"auth-start",20);const url=new URL(request.url),provider=url.searchParams.get("provider") as ExternalProvider,mode=url.searchParams.get("mode")==="link"?"link":"signin";if(!["apple","google","steam"].includes(provider))throw new Error("A supported identity provider is required.");const accountId=mode==="link"?(await requireAccount(request)).id:undefined,created=await createOAuthState(provider,mode,url.searchParams.get("returnTo")||"/",accountId);return new Response(null,{status:302,headers:{location:providerAuthorizationUrl(provider,created.payload,url.origin),"set-cookie":oauthCookie(created.cookie,request),"cache-control":"no-store"}});}catch(error){return Response.json({error:error instanceof Error?error.message:"Platform sign-in could not start."},{status:400,headers:{"cache-control":"no-store"}});}}

@@ -3,7 +3,8 @@
 
 import { useEffect, useState } from "react";
 import { gateTarget, type GameState, type RoomIdentity, type RoomSession } from "../../game";
-import { saveRoomIdentity } from "../lib/room-client";
+import { createNetworkRoom, joinNetworkRoom, saveRoomIdentity } from "../lib/room-client";
+import { loadAccountToken, resumeCommanderAccount } from "../lib/account-client";
 
 const ROOM_KEY = "horizon-room-identity-v1";
 
@@ -43,19 +44,27 @@ export function RoomSetup({
   gameFactory,
   startHost,
   openRemote,
+  view = "all",
 }: {
   gameFactory: () => GameState;
   startHost: (session: RoomSession) => void;
   openRemote: (session: RoomSession) => void;
+  view?: "all" | "host" | "join";
 }) {
   const [code, setCode] = useState("");
-  const [seat, setSeat] = useState(1);
   const [name, setName] = useState("");
+  const [roomName, setRoomName] = useState("");
   const [saved, setSaved] = useState<RoomIdentity | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [signedIn, setSignedIn] = useState(false);
+  const [autoStartWhenReady, setAutoStartWhenReady] = useState(false);
+  const [access, setAccess] = useState<{verificationMode:"commander"|"room-code";roomCreationOpen:boolean;spectatorsAllowed:boolean;notice:string|null}>({verificationMode:"commander",roomCreationOpen:true,spectatorsAllowed:true,notice:null});
 
   useEffect(() => {
+    setSignedIn(Boolean(loadAccountToken()));
+    void resumeCommanderAccount().then(()=>setSignedIn(true)).catch(()=>setSignedIn(false));
+    void fetch("/api/auth/providers",{cache:"no-store"}).then(response=>response.json() as Promise<{multiplayerAccess?:typeof access}>).then(payload=>payload.multiplayerAccess&&setAccess(payload.multiplayerAccess)).catch(()=>undefined);
     setSaved(recalled());
     const invited = new URLSearchParams(window.location.search).get("join");
     if (invited) setCode(invited.toUpperCase().slice(0, 6));
@@ -78,38 +87,49 @@ export function RoomSetup({
   };
 
   return (
-    <section className="room-setup">
+    <section className="room-setup premium-room-setup" data-view={view}>
       <div className="room-heading">
         <div>
-          <span>0.20.2 NETWORK PLAYTEST</span>
+          <span>0.35.4 CONNECTED COMMAND</span>
           <h3>Persistent online game rooms</h3>
         </div>
         <small>
           Ready a private seat, reconnect safely, command fleets, negotiate, or watch the public board.
         </small>
       </div>
+      {access.notice&&<div className="network-operations-notice"><b>HORIZON OPERATIONS</b><span>{access.notice}</span></div>}
+      {!signedIn && access.verificationMode==="commander" && <div className="network-account-gate">
+        <span>COMMANDER ACCOUNT REQUIRED</span>
+        <h3>Sign in before entering the Horizon Network.</h3>
+        <p>Your profile keeps room access, statistics, achievements, and emblems synchronized across devices.</p>
+        <button className="primary" onClick={() => { const invite=code.length===6?`/?join=${code}`:"/?open=create"; window.location.assign(`/?open=profile&returnTo=${encodeURIComponent(invite)}`); }}>Open Commander Profile</button>
+      </div>}
+      {access.verificationMode==="room-code"&&<div className="network-account-gate room-code-access"><span>ROOM CODE ACCESS</span><h3>Temporary playtest access is active.</h3><p>Enter a display name and use the invitation code. This seat remains tied to this browser unless you also sign in to a Commander account.</p><label>Display name<input value={name} maxLength={32} onChange={event=>setName(event.target.value)} placeholder="Commander name"/></label></div>}
       <div className="room-setup-grid">
-        <div>
+        {view !== "join" && <div>
           <b>Host a room</b>
           <p>Create an invitation code. Human players choose factions after claiming their seats.</p>
+          <label className="room-name-create">
+            Room name <small>Optional</small>
+            <input value={roomName} maxLength={48} onChange={(event) => setRoomName(event.target.value)} placeholder="Defaults to the room code" />
+          </label>
+          <label className="room-auto-start-create">
+            <input type="checkbox" checked={autoStartWhenReady} onChange={(event) => setAutoStartWhenReady(event.target.checked)} />
+            <span><b>Start automatically when ready</b><small>The server launches as soon as every human has claimed a faction and readied. You do not need to remain online.</small></span>
+          </label>
           <button
             className="primary"
-            disabled={busy}
+            disabled={busy || !access.roomCreationOpen || (access.verificationMode==="commander"?!signedIn:!name.trim())}
             onClick={() =>
               act(() =>
-                roomRequest({
-                  action: "create",
-                  game: gameFactory(),
-                  displayName: name || "Host",
-                  mode: "network",
-                }),
+                createNetworkRoom(gameFactory(), name || "Host", autoStartWhenReady, roomName),
               )
             }
           >
-            Create room
+            {access.roomCreationOpen?"Create room":"Room creation paused"}
           </button>
-        </div>
-        <div className="room-join">
+        </div>}
+        {view !== "host" && <div className="room-join">
           <b>Join a private seat</b>
           <label>
             Invitation code
@@ -120,45 +140,18 @@ export function RoomSetup({
               placeholder="ABC234"
             />
           </label>
-          <label>
-            Seat
-            <select
-              value={seat}
-              onChange={(event) => setSeat(Number(event.target.value))}
-            >
-              {[1, 2, 3, 4, 5, 6].map((number) => (
-                <option value={number} key={number}>
-                  {number}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Player name
-            <input
-              value={name}
-              maxLength={40}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Player"
-            />
-          </label>
           <button
-            disabled={busy || code.length !== 6}
+            disabled={busy || code.length !== 6 || (access.verificationMode==="commander"?!signedIn:!name.trim())}
             onClick={() =>
               act(() =>
-                roomRequest({
-                  action: "join",
-                  code,
-                  playerId: seat - 1,
-                  displayName: name,
-                }),
+                joinNetworkRoom(code, -1, name),
               )
             }
           >
-            Claim seat
+            Claim an open human seat
           </button>
-          <button disabled={busy || code.length !== 6} onClick={() => window.location.assign(`/room/${code}?spectate=1`)}>Watch room</button>
-        </div>
+          <button disabled={busy || code.length !== 6 || !access.spectatorsAllowed} onClick={() => window.location.assign(`/room/${code}?spectate=1`)}>{access.spectatorsAllowed?"Watch room":"Spectating paused"}</button>
+        </div>}
       </div>
       {saved && (
         <button

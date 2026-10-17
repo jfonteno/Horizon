@@ -3,8 +3,20 @@
 import type { RoomCommand } from "../../game/server/command";
 import type { RoomIdentity, RoomMode, RoomSession } from "../../game/server/types";
 import type { GameState } from "../../game/types";
+import { loadAccountToken } from "./account-client";
 
 const ROOM_STORAGE_PREFIX = "horizon-network-room-v1:";
+let createdRoom: { session: RoomSession; at: number } | undefined;
+
+/** One-use handoff during client navigation; never persist private game state. */
+export function takeCreatedRoom(code: string): RoomSession | null {
+  if (!createdRoom || normalizeCode(code) !== createdRoom.session.code) return null;
+  const cached = createdRoom;
+  createdRoom = undefined;
+  const identity = loadRoomIdentity(code);
+  if (Date.now() - cached.at > 60_000 || identity?.token !== cached.session.token || identity.revision > cached.session.revision) return null;
+  return cached.session;
+}
 
 type RoomApiErrorPayload = { error?: string; message?: string };
 
@@ -12,7 +24,10 @@ type RoomCreateRequest = {
   action: "create";
   game: GameState;
   displayName: string;
+  roomName?: string;
   mode: RoomMode;
+  autoStartWhenReady?: boolean;
+  accountToken?: string;
 };
 
 type RoomJoinRequest = {
@@ -20,6 +35,7 @@ type RoomJoinRequest = {
   code: string;
   playerId: number;
   displayName: string;
+  accountToken?: string;
 };
 
 type RoomResumeRequest = {
@@ -27,6 +43,9 @@ type RoomResumeRequest = {
   code: string;
   token: string;
 };
+
+type RoomAccountResumeRequest = { action:"resumeAccount";code:string;accountToken?:string };
+type RoomRematchRequest = { action:"rematch";code:string;token:string;accountToken?:string };
 
 type RoomSpectateRequest = { action: "spectate"; code: string };
 
@@ -58,11 +77,12 @@ async function readPayload<T>(response: Response): Promise<T> {
 }
 
 async function roomRequest(
-  body: RoomCreateRequest | RoomJoinRequest | RoomResumeRequest | RoomSpectateRequest,
+  body: RoomCreateRequest | RoomJoinRequest | RoomResumeRequest | RoomAccountResumeRequest | RoomRematchRequest | RoomSpectateRequest,
 ): Promise<RoomSession> {
+  const accountToken=loadAccountToken();
   const response = await fetch("/api/rooms", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(accountToken?{"authorization":`Bearer ${accountToken}`}:{}) },
     body: JSON.stringify(body),
     cache: "no-store",
   });
@@ -83,6 +103,8 @@ export function roomIdentityFromSession(session: RoomSession): RoomIdentity {
 export function saveRoomIdentity(session: RoomSession) {
   if (typeof window === "undefined") return;
   const identity = roomIdentityFromSession(session);
+  const previous = loadRoomIdentity(session.code);
+  if (previous && previous.revision > identity.revision) return;
   window.localStorage.setItem(
     `${ROOM_STORAGE_PREFIX}${normalizeCode(session.code)}`,
     JSON.stringify(identity),
@@ -109,14 +131,37 @@ export function forgetRoomIdentity(code: string) {
 export async function createNetworkRoom(
   game: GameState,
   displayName: string,
+  autoStartWhenReady = false,
+  roomName = "",
 ): Promise<RoomSession> {
   const session = await roomRequest({
     action: "create",
     game,
     displayName,
+    roomName,
     mode: "network",
+    autoStartWhenReady,
+    accountToken: loadAccountToken() || undefined,
   });
   saveRoomIdentity(session);
+  createdRoom = { session, at: Date.now() };
+  return session;
+}
+
+export async function createLocalRoom(
+  game: GameState,
+  displayName = "Local Commander",
+): Promise<RoomSession> {
+  const session = await roomRequest({
+    action: "create",
+    game,
+    displayName,
+    mode: "local",
+    accountToken: loadAccountToken() || undefined,
+  });
+  saveRoomIdentity(session);
+  window.localStorage.setItem("horizon-room-identity-v1", JSON.stringify(roomIdentityFromSession(session)));
+  createdRoom = { session, at: Date.now() };
   return session;
 }
 
@@ -130,9 +175,53 @@ export async function joinNetworkRoom(
     code: normalizeCode(code),
     playerId,
     displayName,
+    accountToken: loadAccountToken() || undefined,
   });
   saveRoomIdentity(session);
   return session;
+}
+
+export async function recoverNetworkRoom(code:string):Promise<RoomSession> {
+  const accountToken=loadAccountToken();
+  const session=await roomRequest({action:"resumeAccount",code:normalizeCode(code),...(accountToken?{accountToken}:{})});
+  saveRoomIdentity(session);
+  return session;
+}
+
+export async function createNetworkRematch(session: RoomSession): Promise<RoomSession> {
+  if (session.role !== "host") throw new Error("Only the host can create a rematch lobby.");
+  const accountToken = loadAccountToken();
+  const rematch = await roomRequest({ action: "rematch", code: normalizeCode(session.code), token: session.token, ...(accountToken ? { accountToken } : {}) });
+  saveRoomIdentity(rematch);
+  createdRoom = { session: rematch, at: Date.now() };
+  return rematch;
+}
+
+export function isCurrentRoomResponse(current: RoomSession | null, next: RoomSession) {
+  return !current || current.code !== next.code || next.revision >= current.revision;
+}
+
+export async function connectPrivateRoom(code: string, forceRecovery = false) {
+  if (forceRecovery) return recoverNetworkRoom(code);
+  const identity = loadRoomIdentity(code);
+  if (identity?.token) {
+    try { return await resumeNetworkRoom(code, identity.token); }
+    catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("resume token is not valid")) throw error;
+    }
+  }
+  return recoverNetworkRoom(code);
+}
+
+export async function synchronizeRoom(session: RoomSession, signal: AbortSignal, latest: () => RoomSession = () => session) {
+  try { return await waitForRoomUpdate(session, signal); }
+  catch (error) {
+    if (signal.aborted) throw error;
+    const result = await pollRoomSession(latest());
+    // Back off even if short polling succeeds while the long-poll endpoint is unavailable.
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    return result;
+  }
 }
 
 export async function resumeNetworkRoom(
@@ -207,6 +296,17 @@ export async function pollRoomSession(session: RoomSession): Promise<RoomSession
     ? await spectateNetworkRoom(session.code)
     : await resumeNetworkRoom(session.code, session.token);
   return next.revision === session.revision ? null : next;
+}
+
+export async function waitForRoomUpdate(session:RoomSession, signal?:AbortSignal):Promise<RoomSession|null> {
+  const response=await fetch(`/api/rooms/${encodeURIComponent(normalizeCode(session.code))}/sync`,{
+    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:session.token,revision:session.revision,spectator:session.role==="spectator"}),cache:"no-store",signal,
+  });
+  if(response.status===204) return null;
+  const payload=await readPayload<{changed:boolean;session?:RoomSession}>(response);
+  if(!payload.changed||!payload.session) return null;
+  if(payload.session.role!=="spectator") saveRoomIdentity(payload.session);
+  return payload.session;
 }
 
 export async function sendRoomCommandWithRefresh(

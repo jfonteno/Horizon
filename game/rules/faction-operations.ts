@@ -1,5 +1,6 @@
 import { getNeighbors } from "../engine/geometry";
 import { factionRules } from "../factions";
+import { destroyLoadedBlockades } from "./blockades";
 import { mapLibrary } from "../maps";
 import type { CivilianUnitType, GameState, TradableResource, TradeBundle } from "../types";
 import { canPay, spend } from "./economy";
@@ -42,8 +43,10 @@ export const civilianLibrary: Record<
 
 export function setHomeProductionChoice(game: GameState, playerId: number, resource: "material" | "currency" | "research") {
   const player = game.players[playerId], rules = factionRules(player);
-  const allowed = rules === "varkesh" ? ["material", "currency"] : rules === "farbound" ? ["research", "currency"] : [];
+  const allowed = rules === "varkesh" ? ["material", "currency"] : rules === "farbound" ? ["research", "currency"] : rules === "helix" ? ["research", "material", "currency"] : [];
   if (!allowed.includes(resource)) return { ok: false, message: "This faction does not have flexible Homeworld production." };
+  if (!["negotiation", "orders"].includes(game.orderProtocol.phase) || game.orderProtocol.submissions.some((submission) => submission.playerId === playerId))
+    return { ok: false, message: "Choose Homeworld production before sealing Orders." };
   player.homeProductionChoice = resource;
   return { ok: true, message: `${player.name} will produce ${resource} at its Homeworld next Production Phase.` };
 }
@@ -319,34 +322,42 @@ export function brokerTrade(
       ok: false,
       message: "That civilization pair was already brokered this Turn.",
     };
+  const tradeResources = ["material", "currency", "research"] as TradableResource[];
+  if ([aGives, bGives].some((bundle) => !bundle || ["material", "currency", "research", "labor"].some((key) => !Number.isSafeInteger(bundle[key as keyof TradeBundle]) || (bundle[key as keyof TradeBundle] || 0) < 0)))
+    return { ok: false, message: "Brokered trade amounts must be non-negative integers." };
+  if (tradeResources.every((resource) => aGives[resource] === 0) || tradeResources.every((resource) => bGives[resource] === 0))
+    return { ok: false, message: "Both civilizations must contribute a resource to a brokered trade." };
   if (aGives.labor || bGives.labor)
     return {
       ok: false,
       message:
         "Brokerage currently handles Material, Currency, and Research. Labor requires direct agreements.",
     };
-  for (const r of ["material", "currency", "research"] as TradableResource[])
+  for (const r of tradeResources)
     if (pa.resources[r] < aGives[r] || pb.resources[r] < bGives[r])
       return {
         ok: false,
         message: "One civilization cannot provide the agreed exchange.",
       };
-  for (const r of ["material", "currency", "research"] as TradableResource[]) {
+  for (const r of tradeResources) {
     pa.resources[r] -= aGives[r];
     pb.resources[r] += aGives[r];
     pb.resources[r] -= bGives[r];
     pa.resources[r] += bGives[r];
   }
-  broker.resources.currency++;
-  broker.legacyMetrics.marketCurrencyEarned++;
+  const rewarded = !broker.legacyMetrics.brokeragePairs.some((entry) => entry.startsWith(`${game.turn}:`));
+  if (rewarded) {
+    broker.resources.currency++;
+    broker.legacyMetrics.marketCurrencyEarned++;
+  }
   broker.legacyMetrics.brokeragePairs.push(`${game.turn}:${pair}`);
   broker.legacyMetrics.brokerageTransactions++;
   game.log.unshift(
-    `${broker.name} brokered a trade between ${pa.name} and ${pb.name}, gaining 1 Currency.`,
+    `${broker.name} brokered a trade between ${pa.name} and ${pb.name}${rewarded ? ", gaining 1 Currency" : ""}.`,
   );
   return {
     ok: true,
-    message: "Brokered trade completed. Meridian gained 1 Currency.",
+    message: rewarded ? "Brokered trade completed. Meridian gained 1 Currency." : "Brokered trade completed. Meridian already earned its Brokerage Currency this Turn.",
   };
 }
 export function economicSalvage(game: GameState, playerId: number) {
@@ -370,14 +381,16 @@ export function economicSalvage(game: GameState, playerId: number) {
     if (!remaining) break;
   }
   if (remaining) {
+    const crewedIds = new Set(game.carriers.filter((carrier) => carrier.owner === playerId && carrier.cu > 0).map((carrier) => carrier.id));
     for (const carrier of game.carriers.filter((candidate) => candidate.owner === playerId).sort((a, b) => a.id.localeCompare(b.id))) {
       const removed = Math.min(remaining, carrier.cu);
       carrier.cu -= removed;
       remaining -= removed;
       if (!remaining) break;
     }
-    const destroyed = game.carriers.filter((carrier) => carrier.owner === playerId && carrier.cu === 0);
-    game.carriers = game.carriers.filter((carrier) => carrier.owner !== playerId || carrier.cu > 0);
+    const destroyed = game.carriers.filter((carrier) => crewedIds.has(carrier.id) && carrier.cu === 0);
+    destroyLoadedBlockades(game, destroyed.map((carrier) => carrier.id));
+    game.carriers = game.carriers.filter((carrier) => !destroyed.includes(carrier));
     destroyed.forEach(() => game.log.unshift(`${p.name} scrapped an uncrewed military vessel during Economic Salvage.`));
   }
   p.resources.currency++;

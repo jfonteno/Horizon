@@ -14,7 +14,7 @@ type Props = {
 };
 
 const resources = ["material", "currency", "research", "labor"] as const;
-const bundle = (value: TradeBundle) => resources.filter(resource => value[resource]).map(resource => `${value[resource]} ${resource}`).join(", ") || "nothing";
+const bundle = (value: TradeBundle) => [...resources.filter(resource => value[resource]).map(resource => `${value[resource]} ${resource}`), ...(value.influence ? [`${value.influence} influence`] : [])].join(", ") || "nothing";
 
 function recipient(proposal: DiplomacyProposal) {
   return proposal.kind === "technology" ? proposal.buyer : proposal.to;

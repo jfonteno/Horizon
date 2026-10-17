@@ -27,14 +27,18 @@ const env = {
   npm_config_update_notifier: "false",
 };
 
+// Launch package CLIs through Node directly. Windows cmd.exe splits paths that
+// contain spaces or parentheses when spawn() uses shell:true.
 function bin(name) {
-  return join(root, "node_modules", ".bin", process.platform === "win32" ? `${name}.cmd` : name);
+  const scripts = { vinext: "vinext/dist/cli.js", eslint: "eslint/bin/eslint.js", tsc: "typescript/bin/tsc" };
+  if (!scripts[name]) throw new Error(`Unknown build tool: ${name}`);
+  return join(root, "node_modules", scripts[name]);
 }
 
 async function run(command, args, options = {}) {
   const timeoutMs = options.timeoutMs || 0;
   await new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { cwd: root, env: { ...env, ...options.env }, stdio: "inherit", shell: process.platform === "win32" });
+    const child = spawn(command, args, { cwd: root, env: { ...env, ...options.env }, stdio: "inherit", shell: false });
     const timer = timeoutMs ? setTimeout(() => child.kill("SIGTERM"), timeoutMs) : null;
     child.once("error", reject);
     child.once("exit", (code, signal) => {
@@ -57,7 +61,7 @@ async function validateArtifact() {
 }
 
 async function build(useStandalone = standalone) {
-  await run(bin("vinext"), ["build"], {
+  await run(process.execPath, [bin("vinext"), "build"], {
     timeoutMs: Number(process.env.SITES_BUILD_TIMEOUT_MS || 180_000),
     env: useStandalone ? { HORIZON_STANDALONE: "1" } : {},
   });
@@ -66,12 +70,16 @@ async function build(useStandalone = standalone) {
 
 try {
   if (task === "build") await build();
-  else if (task === "lint") await run(bin("eslint"), [".", "--ignore-pattern", "dist", "--ignore-pattern", ".next"]);
-  else if (task === "typecheck") await run(bin("tsc"), ["--noEmit", "--pretty", "false"]);
+  else if (task === "lint") await run(process.execPath, [bin("eslint"), ".", "--ignore-pattern", "dist", "--ignore-pattern", ".next"]);
+  else if (task === "typecheck") await run(process.execPath, [bin("tsc"), "--noEmit", "--pretty", "false"]);
   else if (task === "test") {
     await build(true);
     const tests = (await readdir(join(root, "tests"))).filter((name) => name.endsWith(".test.ts")).map((name) => join("tests", name));
-    await run(process.execPath, ["--import", "tsx", "--test", ...tests], { env: { HORIZON_STANDALONE: "1" } });
+    // Run each file directly so node:test registers through tsx consistently
+    // across supported Node versions, while keeping file-level process isolation.
+    for (let offset = 0; offset < tests.length; offset += 4)
+      await Promise.all(tests.slice(offset, offset + 4).map((file) =>
+        run(process.execPath, ["--import", "tsx", file], { env: { HORIZON_STANDALONE: "1" } })));
   } else if (task === "validate-artifact") await validateArtifact();
   else throw new Error("Usage: node scripts/task-runner.mjs <build|lint|typecheck|test|validate-artifact> [--standalone]");
 } catch (error) {

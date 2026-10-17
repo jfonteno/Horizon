@@ -4,13 +4,28 @@ import { verifyRoomAudit } from "./audit";
 export async function createPlaytestReport(room: StoredRoom) {
   const integrity = await verifyRoomAudit(room);
   const last = room.game.history.at(-1);
+  const commandCounts = room.audit.reduce<Record<string, number>>((counts, entry) => {
+    counts[entry.commandKind] = (counts[entry.commandKind] || 0) + 1;
+    return counts;
+  }, {});
+  const feedbackSummary = room.feedback.length ? {
+    responses: room.feedback.length,
+    averageRating: Number((room.feedback.reduce((sum, item) => sum + item.rating, 0) / room.feedback.length).toFixed(2)),
+    averageDifficulty: Number((room.feedback.reduce((sum, item) => sum + item.difficulty, 0) / room.feedback.length).toFixed(2)),
+    wouldPlayAgain: room.feedback.filter((item) => item.wouldPlayAgain).length,
+    issueTags: room.feedback.flatMap((item) => item.issueTags).reduce<Record<string, number>>((counts, tag) => {
+      counts[tag] = (counts[tag] || 0) + 1;
+      return counts;
+    }, {}),
+  } : { responses: 0, averageRating: null, averageDifficulty: null, wouldPlayAgain: 0, issueTags: {} };
   return {
     format: "horizon-playtest-report",
     formatVersion: 2,
-    gameVersion: "0.20.2",
+    gameVersion: "0.35.4",
     generatedAt: new Date().toISOString(),
     room: {
       code: room.code,
+      name: room.name?.trim() || room.code,
       mode: room.mode,
       status: room.status,
       createdAt: room.createdAt,
@@ -18,6 +33,7 @@ export async function createPlaytestReport(room: StoredRoom) {
       revision: room.revision,
       turnTimerSeconds: room.turnTimerSeconds,
       turnDeadlineAt: room.turnDeadlineAt,
+      durationMs: Math.max(0, Date.parse(room.updatedAt) - Date.parse(room.createdAt)),
     },
     setup: {
       seed: room.game.seed,
@@ -54,6 +70,29 @@ export async function createPlaytestReport(room: StoredRoom) {
       }),
     },
     history: room.game.history,
+    lifecycle: {
+      commandsAccepted: room.audit.length,
+      commandCounts,
+      seatRecoveries: room.events.filter((event) => event.message.includes("recovered this seat")).length,
+      hostTransfers: room.events.filter((event) => event.message.includes("Host authority transferred")).length,
+      moderationReports: room.chat.reports.length,
+      moderationReportsOpen: room.chat.reports.filter((report) => report.status === "open").length,
+      chatMessages: room.chat.messages.filter((message) => message.senderKind !== "system").length,
+      turnsRecorded: room.game.history.length,
+    },
+    objectives: room.game.players.map((player) => ({
+      playerId: player.id,
+      civilization: player.name,
+      universalClaims: room.game.universalClaims.filter((claim) => claim.playerId === player.id),
+      civilizationClaims: player.civilizationClaims,
+      hiddenLegacy: player.hiddenLegacy,
+      legacy: player.legacy,
+    })),
+    gateLedger: room.game.gateLedger,
+    feedback: {
+      summary: feedbackSummary,
+      responses: room.feedback,
+    },
     events: room.events,
     audit: {
       startRevision: room.auditStartRevision ?? null,

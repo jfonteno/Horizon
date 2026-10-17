@@ -6,6 +6,8 @@ archive="${1:-}"
 data_dir="${HORIZON_DATA_DIR:-${project_root}/data/rooms}"
 data_root="${HORIZON_DATA_ROOT:-$(dirname "${data_dir}")}"
 content_dir="${HORIZON_CONTENT_DIR:-${data_root}/content}"
+account_dir="${HORIZON_ACCOUNT_DIR:-${data_root}/accounts}"
+operations_dir="$(dirname "${HORIZON_OPERATIONS_PATH:-${data_root}/operations/settings.json}")"
 
 if [[ -z "${archive}" || ! -f "${archive}" ]]; then
   echo "Usage: HORIZON_RESTORE_CONFIRM=YES npm run restore:self-hosted -- /path/to/backup.tar.gz" >&2
@@ -19,10 +21,20 @@ if [[ "$(dirname "${content_dir}")" != "${data_root}" ]]; then
   echo "HORIZON_CONTENT_DIR must be directly beneath HORIZON_DATA_ROOT for restore." >&2
   exit 64
 fi
+if [[ "$(dirname "${account_dir}")" != "${data_root}" ]]; then
+  echo "HORIZON_ACCOUNT_DIR must be directly beneath HORIZON_DATA_ROOT for restore." >&2
+  exit 64
+fi
+if [[ "$(dirname "${operations_dir}")" != "${data_root}" ]]; then
+  echo "HORIZON_OPERATIONS_PATH must be within a directory directly beneath HORIZON_DATA_ROOT for restore." >&2
+  exit 64
+fi
 
 parent="${data_root}"
 name="$(basename "${data_dir}")"
 content_name="$(basename "${content_dir}")"
+account_name="$(basename "${account_dir}")"
+operations_name="$(basename "${operations_dir}")"
 if ! tar -tzf "${archive}" >/dev/null; then
   echo "Backup is not a readable gzip archive." >&2
   exit 65
@@ -31,7 +43,10 @@ fi
 valid_archive=true
 while IFS= read -r entry; do
   if [[ "${entry}" != "${name}" && "${entry}" != "${name}/" && "${entry}" != "${name}/"* &&
-        "${entry}" != "${content_name}" && "${entry}" != "${content_name}/" && "${entry}" != "${content_name}/"* ]] ||
+        "${entry}" != "${content_name}" && "${entry}" != "${content_name}/" && "${entry}" != "${content_name}/"* &&
+        "${entry}" != "${account_name}" && "${entry}" != "${account_name}/" && "${entry}" != "${account_name}/"* &&
+        "${entry}" != "${operations_name}" && "${entry}" != "${operations_name}/" && "${entry}" != "${operations_name}/"* &&
+        "${entry}" != "auth-secret" ]] ||
      [[ "${entry}" == "../"* || "${entry}" == *"/../"* || "${entry}" == *"/.." ]]; then
     valid_archive=false
     break
@@ -46,13 +61,13 @@ while IFS= read -r listing; do
 done < <(tar -tvzf "${archive}")
 
 if [[ "${valid_archive}" != "true" ]]; then
-  echo "Backup contains paths outside the expected ${name}/ and ${content_name}/ directories." >&2
+  echo "Backup contains paths outside the expected Horizon data directories." >&2
   exit 65
 fi
 
 mkdir -p "${parent}"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-for current in "${data_dir}" "${content_dir}"; do
+for current in "${data_dir}" "${content_dir}" "${account_dir}" "${operations_dir}"; do
   if [[ -d "${current}" ]]; then
     previous="${current}.pre-restore.${timestamp}"
     mv "${current}" "${previous}"

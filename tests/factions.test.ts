@@ -44,7 +44,8 @@ test("Farbound Long-Range Survey remains an Orders ability and its archive persi
 test("Meridian Brokerage exchanges resources and pays once per pair each Turn",()=>{
   const game=createGame(3,["meridian","foundry","helix"],"shattered-reach","horizon-base",7003);game.players[1].resources.material=3;game.players[2].resources.currency=4;
   const a={material:2,currency:0,research:0,labor:0},b={material:0,currency:3,research:0,labor:0};
-  assert.equal(brokerTrade(game,0,1,2,a,b).ok,true);assert.equal(game.players[0].resources.currency,3);assert.equal(game.players[1].resources.currency,3);assert.equal(game.players[2].resources.material,2);assert.equal(brokerTrade(game,0,1,2,a,b).ok,false);
+  const helixMaterialBefore=game.players[2].resources.material;
+  assert.equal(brokerTrade(game,0,1,2,a,b).ok,true);assert.equal(game.players[0].resources.currency,3);assert.equal(game.players[1].resources.currency,3);assert.equal(game.players[2].resources.material,helixMaterialBefore+2);assert.equal(brokerTrade(game,0,1,2,a,b).ok,false);
 });
 
 test("Meridian Economic Salvage removes exactly 4 controlled CU, including fleet-loaded units",()=>{

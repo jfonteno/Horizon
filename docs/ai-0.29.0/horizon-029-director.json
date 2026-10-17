@@ -1,0 +1,193 @@
+{
+  "profile": "Strategic Director",
+  "mapId": "standard-board",
+  "playerCount": 4,
+  "games": 1,
+  "gateSuccessRate": 1,
+  "averageGateTributes": 12,
+  "averageLPPerCivilization": 14.75,
+  "averageFinalResourcesPerCivilization": 13.5,
+  "averageHabitatsPerCivilization": 2.25,
+  "averageAcceptedTradesPerGame": 26,
+  "averageTechnologyTotalPerCivilization": 8,
+  "averageMilitaryCSPerCivilization": 9,
+  "contributionStandardDeviation": 0.4330127018922193,
+  "hiddenObjectiveCompletionRate": 0.3125,
+  "civilizationClaimsPerCivilization": 0.75,
+  "universalClaimsPerCivilization": 1.75,
+  "contributionEraRate": 0.8125,
+  "averageCounteroffersPerGame": 3,
+  "failedSubmissionRate": 0,
+  "averageGoalsTrackedPerDecision": 6,
+  "averageOrdersPerTurn": 2.921875,
+  "averageCandidatesPerRecordedDecision": 16.015625,
+  "averageSearchNodesPerRecordedDecision": 72.625,
+  "averageTributesByFaction": {
+    "varkesh": 3,
+    "helix": 3,
+    "foundry": 4,
+    "farbound": 3,
+    "aurelians": 0,
+    "meridian": 0
+  },
+  "averageLPByFaction": {
+    "varkesh": 3,
+    "helix": 14,
+    "foundry": 30,
+    "farbound": 12,
+    "aurelians": 0,
+    "meridian": 0
+  },
+  "hiddenByObjective": {
+    "h1-mobilization": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h2-burden": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h3-peace": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h4-savior": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h1-renaissance": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h2-colonial": {
+      "selected": 3,
+      "completed": 0
+    },
+    "h3-engine": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h4-economy": {
+      "selected": 1,
+      "completed": 1
+    },
+    "h1-frontier": {
+      "selected": 2,
+      "completed": 2
+    },
+    "h3-broker": {
+      "selected": 1,
+      "completed": 1
+    },
+    "h4-complete": {
+      "selected": 2,
+      "completed": 0
+    },
+    "h3-mobilization": {
+      "selected": 1,
+      "completed": 1
+    }
+  },
+  "hiddenOrderKinds": {
+    "h1-mobilization": {
+      "tribute": 1,
+      "explorerMove": 4,
+      "carrierMove": 3,
+      "colonyMove": 3,
+      "construct": 1
+    },
+    "h1-renaissance": {
+      "explorerMove": 4,
+      "colonyMove": 2,
+      "carrierMove": 3,
+      "establish": 1
+    },
+    "h1-frontier": {
+      "explorerMove": 8,
+      "colonyMove": 4,
+      "carrierMove": 6,
+      "establish": 2,
+      "technology": 1,
+      "tribute": 2
+    },
+    "h2-burden": {
+      "tribute": 1,
+      "explorerMove": 4,
+      "carrierMove": 4,
+      "colonyMove": 4,
+      "construct": 1
+    },
+    "h2-colonial": {
+      "colonyMove": 1,
+      "tribute": 3,
+      "explorerMove": 12,
+      "carrierMove": 12,
+      "construct": 6,
+      "technology": 2
+    },
+    "h3-peace": {
+      "colonyMove": 3,
+      "carrierMove": 4,
+      "explorerMove": 4,
+      "establish": 1,
+      "tribute": 1,
+      "technology": 1
+    },
+    "h3-engine": {
+      "explorerMove": 4,
+      "carrierMove": 4,
+      "tribute": 1,
+      "construct": 2,
+      "technology": 1
+    },
+    "h3-broker": {
+      "explorerMove": 4,
+      "carrierMove": 4,
+      "tribute": 1,
+      "construct": 2,
+      "establish": 1
+    },
+    "h3-mobilization": {
+      "construct": 3,
+      "carrierMove": 4,
+      "explorerMove": 4,
+      "tribute": 1
+    },
+    "h4-savior": {
+      "technology": 1,
+      "explorerMove": 3,
+      "carrierMove": 4,
+      "construct": 1
+    },
+    "h4-economy": {
+      "technology": 1,
+      "explorerMove": 3,
+      "construct": 2,
+      "carrierMove": 4,
+      "tribute": 1
+    },
+    "h4-complete": {
+      "colonyMove": 2,
+      "construct": 2,
+      "explorerMove": 8,
+      "carrierMove": 8,
+      "technology": 1,
+      "tribute": 1
+    }
+  },
+  "civilizationClaimsByObjective": {
+    "h-export": 1,
+    "f-engine": 1,
+    "b-survey": 1
+  },
+  "wins": {
+    "varkesh": 0,
+    "helix": 0,
+    "foundry": 1,
+    "farbound": 0,
+    "aurelians": 0,
+    "meridian": 0
+  },
+  "elapsedMs": 11355,
+  "gamesPerSecond": 0.1
+}

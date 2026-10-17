@@ -1,0 +1,59 @@
+{
+  "profileVersion": 1,
+  "id": "ai-emperor",
+  "name": "Emperor",
+  "description": "Aggressive multi-turn scoring planner with Hidden LP threat intervals, resource-partner dependency management, leader containment, faction-specific development, and Gate risk control.",
+  "difficulty": "emperor",
+  "planning": {
+    "beamWidth": 72,
+    "candidateLimit": 128,
+    "maxOrders": 13,
+    "threatHorizon": 3,
+    "riskTolerance": 0.55,
+    "reserveByEra": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "uncertaintyPenalty": 0.42,
+    "diplomacyHorizon": 4,
+    "gateSafetyMargin": 2,
+    "forecastHorizon": 5,
+    "minimumGateConfidence": 0.86
+  },
+  "priorities": {
+    "legacy": 1.52,
+    "economy": 1.58,
+    "technology": 1.35,
+    "expansion": 1.5,
+    "military": 1.28,
+    "diplomacy": 1.45,
+    "gate": 1.4,
+    "denial": 1.2,
+    "survival": 1.34
+  },
+  "technology": {
+    "Military": 1,
+    "Economy": 1.24,
+    "Policy": 1.08,
+    "Exploration": 1.08,
+    "Resource": 1.12
+  },
+  "behaviors": {
+    "punishFreeRiders": false,
+    "avoidMutualDestruction": true,
+    "protectGateCompletion": true,
+    "preferFlexibleResources": true,
+    "exploitFactionSynergy": true,
+    "recordCounterfactuals": true,
+    "coordinateGateSupport": true,
+    "useMarketForGate": true,
+    "modelOpponents": true,
+    "routeColonies": true,
+    "redTeamNotebook": true,
+    "multiTurnPlanning": true,
+    "factionDoctrine": true,
+    "victoryImpact": true
+  }
+}

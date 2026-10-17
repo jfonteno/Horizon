@@ -10,7 +10,7 @@ const COLORS = /^#[0-9a-f]{6}$/i;
 const MAP_TILES = new Set(["material", "currency", "research", "influence", "labor", "barren", "anomaly", "hazard", "empty"]);
 const RESOURCES = new Set<Resource>(["material", "currency", "research", "influence"]);
 const BRANCHES = new Set<TechnologyBranch>(["Military", "Economy", "Policy", "Exploration", "Resource"]);
-const PROFILES = new Set(["standard", "varkesh", "helix", "foundry", "aurelians", "meridian", "farbound"]);
+const PROFILES = new Set(["standard", "varkesh", "helix", "foundry", "aurelians", "meridian", "farbound", "spires", "aegis", "wayfarers", "salvo", "guilds"]);
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -24,7 +24,7 @@ export function validateManifest(value: unknown): string[] {
   if (!object(value)) return ["manifest.json must contain an object."];
   const manifest = value as Partial<ContentPackManifest>;
   const issues: string[] = [];
-  const extras = unknownKeys(value, ["schemaVersion", "id", "name", "version", "horizonVersion", "description", "maps", "factions"]);
+  const extras = unknownKeys(value, ["schemaVersion", "id", "name", "version", "horizonVersion", "description", "coverArt", "modules", "dependencies", "storeProductIds", "maps", "factions"]);
   if (extras.length) issues.push(`Unknown manifest field(s): ${extras.join(", ")}.`);
   if (manifest.schemaVersion !== 1) issues.push("schemaVersion must be 1.");
   if (!ID.test(manifest.id || "")) issues.push("id must be a lowercase, URL-safe identifier.");
@@ -34,6 +34,10 @@ export function validateManifest(value: unknown): string[] {
   for (const field of ["maps", "factions"] as const)
     if (manifest[field] !== undefined && (!Array.isArray(manifest[field]) || manifest[field]!.length > 50 || manifest[field]!.some((entry) => typeof entry !== "string")))
       issues.push(`${field} must be an array of relative JSON paths.`);
+  if (manifest.coverArt !== undefined && (typeof manifest.coverArt !== "string" || !manifest.coverArt)) issues.push("coverArt must be a local asset path.");
+  if (manifest.modules !== undefined && (!Array.isArray(manifest.modules) || manifest.modules.length > 50 || manifest.modules.some((entry) => typeof entry !== "string" || !ID.test(entry)))) issues.push("modules must contain URL-safe module identifiers.");
+  if (manifest.dependencies !== undefined && (!Array.isArray(manifest.dependencies) || manifest.dependencies.length > 20 || manifest.dependencies.some((entry) => !object(entry) || !ID.test(String(entry.id || "")) || !VERSION.test(String(entry.version || ""))))) issues.push("dependencies must contain content-pack IDs and semantic versions.");
+  if (manifest.storeProductIds !== undefined && (!object(manifest.storeProductIds) || unknownKeys(manifest.storeProductIds, ["steam", "apple", "google", "web"]).length || Object.values(manifest.storeProductIds).some((entry) => typeof entry !== "string" || !entry.trim()))) issues.push("storeProductIds may contain non-empty steam, apple, google, and web identifiers.");
   return issues;
 }
 

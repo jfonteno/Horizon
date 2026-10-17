@@ -3,9 +3,9 @@ import type { MapDefinition } from "./types";
 
 const repeat = (kind: HexKind, count: number) => Array<HexKind>(count).fill(kind);
 const blocked = new Set<string>();
-const radius = 5;
-for (let row = 0; row < 11; row++)
-  for (let col = 0; col < 11; col++) {
+const radius = 4;
+for (let row = 0; row < 9; row++)
+  for (let col = 0; col < 9; col++) {
     const q = col - radius;
     const r = row - radius - (q - (q & 1)) / 2;
     if (Math.max(Math.abs(q), Math.abs(r), Math.abs(-q - r)) > radius)
@@ -15,26 +15,26 @@ for (let row = 0; row < 11; row++)
 export const standardBoard: MapDefinition = {
   id: "standard-board",
   name: "Standard Board",
-  description: "The canonical symmetric side-6 board with 91 playable hexes. Hazard tiles are replaced by Empty Space.",
-  rows: 11,
-  columns: 11,
-  starts: ["1-5", "3-9", "7-9", "9-5", "7-1", "3-1"],
+  description: "A compact, symmetric side-5 hexagon with 61 playable sectors and no internal voids.",
+  rows: 9,
+  columns: 9,
+  starts: ["1-4", "2-7", "5-7", "7-4", "5-1", "2-1"],
   startsByPlayerCount: {
-    4: ["1-5", "5-9", "9-5", "5-1"],
-    5: ["1-5", "3-9", "7-9", "9-5", "5-1"],
-    6: ["1-5", "3-9", "7-9", "9-5", "7-1", "3-1"],
+    4: ["1-4", "5-7", "7-4", "2-1"],
+    5: ["1-4", "2-7", "5-7", "7-4", "2-1"],
+    6: ["1-4", "2-7", "5-7", "7-4", "5-1", "2-1"],
   },
   regions: {},
   blocked,
   tilePool: [
-    ...repeat("material", 8),
-    ...repeat("currency", 8),
-    ...repeat("research", 8),
-    ...repeat("influence", 8),
-    ...repeat("labor", 8),
-    ...repeat("barren", 12),
-    ...repeat("anomaly", 8),
-    ...repeat("empty", 25),
+    ...repeat("material", 5),
+    ...repeat("currency", 5),
+    ...repeat("research", 5),
+    ...repeat("influence", 5),
+    ...repeat("labor", 5),
+    ...repeat("barren", 8),
+    ...repeat("anomaly", 5),
+    ...repeat("empty", 17),
   ],
   minPlayers: 4,
   maxPlayers: 6,

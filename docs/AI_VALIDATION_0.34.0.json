@@ -1,0 +1,112 @@
+{
+  "profiles": {
+    "ai-easy": {
+      "games": 44,
+      "wins": 8,
+      "averageLP": 14.59,
+      "averageHabitats": 2.14,
+      "averageTributes": 2.68,
+      "hiddenCompleted": 85,
+      "claims": 58,
+      "failedSubmissionRate": 0
+    },
+    "ai-medium": {
+      "games": 44,
+      "wins": 12,
+      "averageLP": 14.18,
+      "averageHabitats": 2.2,
+      "averageTributes": 3.25,
+      "hiddenCompleted": 73,
+      "claims": 74,
+      "failedSubmissionRate": 0
+    },
+    "ai-hard": {
+      "games": 44,
+      "wins": 7,
+      "averageLP": 13.93,
+      "averageHabitats": 2.07,
+      "averageTributes": 2.7,
+      "hiddenCompleted": 82,
+      "claims": 56,
+      "failedSubmissionRate": 0
+    },
+    "ai-emperor": {
+      "games": 44,
+      "wins": 6,
+      "averageLP": 13.3,
+      "averageHabitats": 2.16,
+      "averageTributes": 2.89,
+      "hiddenCompleted": 76,
+      "claims": 57,
+      "failedSubmissionRate": 0
+    }
+  },
+  "factions": {
+    "varkesh": {
+      "games": 16,
+      "averageLP": 10.88,
+      "averageTributes": 3,
+      "wins": 0
+    },
+    "helix": {
+      "games": 16,
+      "averageLP": 15.88,
+      "averageTributes": 3.69,
+      "wins": 4
+    },
+    "foundry": {
+      "games": 16,
+      "averageLP": 12.19,
+      "averageTributes": 2.31,
+      "wins": 5
+    },
+    "farbound": {
+      "games": 16,
+      "averageLP": 18.44,
+      "averageTributes": 3,
+      "wins": 5
+    },
+    "aurelians": {
+      "games": 16,
+      "averageLP": 8,
+      "averageTributes": 3.19,
+      "wins": 0
+    },
+    "meridian": {
+      "games": 16,
+      "averageLP": 13.94,
+      "averageTributes": 2.44,
+      "wins": 4
+    },
+    "spires": {
+      "games": 16,
+      "averageLP": 16.31,
+      "averageTributes": 3.5,
+      "wins": 2
+    },
+    "aegis": {
+      "games": 16,
+      "averageLP": 16.63,
+      "averageTributes": 2.88,
+      "wins": 5
+    },
+    "wayfarers": {
+      "games": 16,
+      "averageLP": 11.13,
+      "averageTributes": 1.94,
+      "wins": 1
+    },
+    "salvo": {
+      "games": 16,
+      "averageLP": 10.19,
+      "averageTributes": 2.06,
+      "wins": 1
+    },
+    "guilds": {
+      "games": 16,
+      "averageLP": 20.44,
+      "averageTributes": 3.69,
+      "wins": 6
+    }
+  }
+}

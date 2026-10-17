@@ -1,6 +1,4 @@
 import { factionLibrary, factionRules } from "../factions";
-import { getNeighbors } from "../engine/geometry";
-import { mapLibrary } from "../maps";
 import type { GameState, Resource, SecretOrder } from "../types";
 import {
   buildCivilian,
@@ -16,6 +14,7 @@ import {
   carrierLibrary,
   claimHabitatConstruction,
   recruitCombatUnits,
+  resolveNewHabitatOccupation,
   resolveSimultaneousCarrierMoves,
 } from "./fleet";
 import {
@@ -28,6 +27,7 @@ import {
 import {
   evaluateLegacy,
   finalizeGame,
+  prepareHiddenChoicesForEra,
   scoreHiddenEra,
 } from "./legacy";
 import {
@@ -36,10 +36,15 @@ import {
   researchAgreementDiscount,
   technologyCost,
 } from "./diplomacy";
-import { projectedOrderBudget } from "./purchases";
+import { constructionQuote, projectedOrderBudget } from "./purchases";
 import { recordGameSnapshot } from "../analytics";
 import { beginExplorationTurn, buildExplorationVessel, farboundForwardScan, moveExplorationVessel, scanWithExplorationVessel } from "./exploration";
+import { beginColonyTurn, buildColonyShip, findColonyShip, moveColonyShip, syncPrimaryColonyShip } from "./colony";
 import { finalEra, gateTarget, totalTurns } from "./format";
+import { buildResolutionBriefs, buildTurnReplay, captureResolutionSnapshot } from "./resolution";
+import { beginShatteredTurn, habitatSlots, legalBombardmentTargets, produceShattered, resolveShatteredConstruction, resolveShatteredOrders } from "./shattered-reach";
+import { removeCenterAt, resolvePortalOrder } from "./portals";
+import { activePolicy, markPolicyUsed, policyCost, resolvePolicyVotes, startEraPolicy } from "./policy-deck";
 
 export function beginSecretOrders(game: GameState) {
   if (game.result) return { ok: false, message: "The game is complete." };
@@ -60,22 +65,43 @@ function startingHex(game: GameState, playerId: number) {
   )?.id || game.players[playerId].explorer;
 }
 
-function duplicateVesselOrders(orders: SecretOrder[]) {
-  const vessels: string[] = [];
+function duplicateVesselOrders(game: GameState, playerId: number, orders: SecretOrder[]) {
+  const vesselOrders = new Map<string, SecretOrder[]>();
+  const add = (id: string, order: SecretOrder) => vesselOrders.set(id, [...(vesselOrders.get(id) || []), order]);
   for (const order of orders) {
-    if (order.kind === "carrierMove") vessels.push(...order.carrierIds);
+    if (order.kind === "carrierMove") order.carrierIds.forEach((id) => add(id, order));
+    if (order.kind === "migration") add(order.mobileHabitatId, order);
+    if (order.kind === "bombard") add(order.carrierId, order);
+    if (order.kind === "blockadeCargo") {
+      add(order.carrierId, order);
+      add(order.blockadeId, order);
+    }
+    if (order.kind === "transferBlockade") add(order.blockadeId, order);
     if (
       order.kind === "civilianMove" ||
       order.kind === "prospect" ||
       order.kind === "longRangeSurvey"
     )
-      vessels.push(order.unitId);
+      add(order.unitId, order);
     if (order.kind === "explorerMove" || order.kind === "explorerScan" || order.kind === "farboundForwardScan")
-      vessels.push(order.vesselId || "explorer");
+      add(order.vesselId || "explorer", order);
+    if (order.kind === "wayfarerDeepRecon") add(order.vesselId || "explorer", order);
+    if (order.kind === "openPortal") add(order.vesselId, order);
     if (order.kind === "colonyMove" || order.kind === "establish")
-      vessels.push("colony");
+      add(order.vesselId || game.players[playerId].colonyShips[0]?.id || "colony", order);
   }
-  return new Set(vessels).size !== vessels.length;
+  return [...vesselOrders.values()].some((assigned) => {
+    if (assigned.length <= 1) return false;
+    const kinds = new Set(assigned.map((order) => order.kind));
+    if ([...kinds].every((kind) => kind === "blockadeCargo")) {
+      const actions = new Set(assigned.map((order) => order.kind === "blockadeCargo" ? order.action : ""));
+      return actions.size > 1;
+    }
+    if (assigned.length !== 2) return true;
+    const farboundMoveAndScan = factionRules(game.players[playerId]) === "farbound" && kinds.has("explorerMove") && kinds.has("farboundForwardScan");
+    const carrierMoveAndBombardOne = kinds.has("carrierMove") && assigned.some((order) => order.kind === "bombard" && order.strength === 1);
+    return !farboundMoveAndScan && !carrierMoveAndBombardOne;
+  });
 }
 
 export function submitSecretOrders(
@@ -83,10 +109,9 @@ export function submitSecretOrders(
   playerId: number,
   orders: SecretOrder[],
 ) {
-  let protocol = game.orderProtocol;
+  const protocol = game.orderProtocol;
   if (protocol.phase === "negotiation") {
-    beginSecretOrders(game);
-    protocol = game.orderProtocol;
+    protocol.phase = "orders";
   }
   if (
     protocol.phase !== "orders" ||
@@ -101,15 +126,34 @@ export function submitSecretOrders(
       ok: false,
       message: `Choose an Era ${game.era} Hidden Legacy objective before ending this Turn.`,
     };
-  if (duplicateVesselOrders(orders))
-    return { ok: false, message: "A vessel may issue only one Order per Turn." };
-  const constructionHexes = orders
-    .filter((order) => order.kind === "construct")
-    .map((order) => order.habitatId);
-  if (new Set(constructionHexes).size !== constructionHexes.length)
-    return { ok: false, message: "Each Habitat may issue one Construction Order." };
+  if (duplicateVesselOrders(game, playerId, orders))
+    return { ok: false, message: "A vessel may issue only one Order per Turn, except a Farbound move with Forward Scan or a move with Bombardment 1." };
+  for (const order of orders) {
+    if (order.kind !== "bombard") continue;
+    const move = orders.find((candidate): candidate is Extract<SecretOrder, { kind: "carrierMove" }> => candidate.kind === "carrierMove" && candidate.carrierIds.includes(order.carrierId));
+    if (!legalBombardmentTargets(game, playerId, order.carrierId, undefined, move?.destination).some((target) => target.hexId === order.targetHexId))
+      return { ok: false, message: `Bombardment of ${order.targetHexId} is outside range from the vessel's planned position.` };
+  }
+  for (const order of orders) {
+    if (order.kind !== "colonyMove" && order.kind !== "establish") continue;
+    const vessel = findColonyShip(game.players[playerId], order.vesselId);
+    if (!vessel || vessel.owner !== playerId || vessel.readyTurn > game.turn)
+      return { ok: false, message: "Choose one of your ready Colony Ships." };
+  }
+  const establishmentCount = orders.filter((order) => order.kind === "establish").length;
+  const moduleConstructionCount = orders.filter(
+    (order) => order.kind === "construct" && order.construction.type === "module",
+  ).length;
+  const availableModules = game.players[playerId].modules + moduleConstructionCount;
+  if (establishmentCount > availableModules)
+    return {
+      ok: false,
+      message: `You planned ${establishmentCount} Establish Orders but only ${availableModules} Habitat Module${availableModules === 1 ? " is" : "s are"} available. Construct another Module or remove an Establish Order.`,
+    };
   if (orders.filter((order) => order.kind === "technology").length > 1)
     return { ok: false, message: "A civilization may advance Technology once per Turn." };
+  if (orders.filter((order) => order.kind === "policyVote").length > 1)
+    return { ok: false, message: "Only one Policy vote may be sealed per civilization per Era." };
   if (
     game.era < finalEra(game) &&
     orders.filter((order) => order.kind === "tribute").length > 1
@@ -164,19 +208,10 @@ function resolveCivilianMovement(
   game: GameState,
   orders: Array<{ playerId: number; order: SecretOrder }>,
 ) {
-  const map = mapLibrary[game.mapId];
   for (const { playerId, order } of orders) {
-    const player = game.players[playerId];
     if (order.kind === "explorerMove") moveExplorationVessel(game, playerId, order.vesselId, order.destination, order.path);
-    if (order.kind === "colonyMove") {
-      const target = game.hexes.find((hex) => hex.id === order.destination);
-      if (
-        getNeighbors(player.colonyShip, map).includes(order.destination) &&
-        target?.revealed &&
-        target.kind !== "rift"
-      )
-        player.colonyShip = order.destination;
-    }
+    if (order.kind === "colonyMove")
+      moveColonyShip(game, playerId, order.vesselId, order.destination, order.path);
     if (order.kind === "civilianMove")
       moveCivilian(game, playerId, order.unitId, order.destination);
   }
@@ -191,9 +226,11 @@ function resolveLocations(
     if (order.kind === "prospect") prospect(game, playerId, order.unitId);
     if (order.kind !== "establish") continue;
     const hex = game.hexes.find((candidate) => candidate.id === order.hexId);
+    const colonyShip = findColonyShip(player, order.vesselId);
     if (
       !hex ||
-      player.colonyShip !== hex.id ||
+      colonyShip?.hex !== hex.id ||
+      colonyShip.readyTurn > game.turn ||
       !hex.revealed ||
       !player.modules ||
       hex.owner !== undefined ||
@@ -205,6 +242,7 @@ function resolveLocations(
     hex.originalOwner ??= playerId;
     hex.tier = "Outpost";
     player.legacyMetrics.habitatsEstablished[game.era - 1]++;
+    syncPrimaryColonyShip(player);
     if (factionRules(player) === "farbound" && hex.surveyedBy?.includes(playerId)) {
       player.resources.material++;
       player.resources.currency++;
@@ -227,6 +265,7 @@ function resolveLocations(
       }
     }
     game.log.unshift(`${player.name} established an Outpost at ${hex.id}.`);
+    resolveNewHabitatOccupation(game, hex.id);
   }
 }
 
@@ -244,15 +283,20 @@ function constructionCost(
     return { material: 3, currency: 2, labor: factionRules(player) === "foundry" ? 0 : 2 };
   if (construction.type === "upgrade")
     return habitat.tier === "Outpost"
-      ? { material: 2, currency: 2, labor: 2 }
+      ? { material: 2, currency: factionRules(player) === "spires" ? 1 : 2, labor: 2 }
       : habitat.tier === "Colony"
-        ? { material: 3, currency: 3, labor: 3 }
+        ? { material: 3, currency: factionRules(player) === "spires" ? 2 : 3, labor: 3 }
         : null;
   if (construction.type === "center") {
     if (construction.center === "defense") return { material: 2, currency: 1, labor: 1 };
     if (factionRules(player) === "helix" && construction.center === "research")
-      return { material: 1, currency: 1, labor: 1 };
-    return centerCosts[construction.center];
+      return policyCost(game, playerId, "center", { material: 1, currency: 1, labor: 1 });
+    const cost = { ...centerCosts[construction.center] };
+    if (factionRules(player) === "guilds" && player.legacyMetrics.builtCenters[game.era - 1] === 0)
+      cost.currency = Math.max(0, (cost.currency || 0) - 1);
+    if (factionRules(player) === "aegis" && !player.legacyMetrics.aegisEconomicCenterBuilt)
+      cost.currency = Math.max(0, (cost.currency || 0) - 1);
+    return policyCost(game, playerId, "center", cost);
   }
   if (construction.type === "exploration") return {};
   return {};
@@ -261,12 +305,17 @@ function constructionCost(
 function resolveConstruction(
   game: GameState,
   orders: Array<{ playerId: number; order: SecretOrder }>,
+  include: (order: Extract<SecretOrder, { kind: "construct" }>) => boolean = () => true,
 ) {
   for (const { playerId, order } of orders) {
-    if (order.kind !== "construct") continue;
+    if (order.kind !== "construct" || !include(order)) continue;
     const player = game.players[playerId],
       habitat = game.hexes.find((hex) => hex.id === order.habitatId),
       construction = order.construction;
+    if (["arcology", "enhanceCenter", "factory", "mobileHabitat", "mobileCenter", "blockade", "caravanGuard"].includes(construction.type)) {
+      resolveShatteredConstruction(game, playerId, order.habitatId, construction);
+      continue;
+    }
     if (construction.type === "carrier") {
       buildCarrier(game, playerId, order.habitatId, construction.carrier);
       continue;
@@ -283,17 +332,40 @@ function resolveConstruction(
       buildExplorationVessel(game, playerId, order.habitatId, construction.vessel);
       continue;
     }
+    if (construction.type === "removeCenter" || construction.type === "replaceCenter") {
+      if (!habitat?.tier || habitat.owner !== playerId || habitat.constructionUsedTurn === game.turn || !Number.isInteger(construction.centerIndex) || !habitat.centers[construction.centerIndex]) continue;
+      const quote = constructionQuote(game, playerId, habitat.id, construction);
+      if (!quote.available || !canPay(player, quote.cost)) continue;
+      if (!claimHabitatConstruction(game, habitat.id)) continue;
+      spend(player, quote.cost);
+      const removed = removeCenterAt(habitat, construction.centerIndex, player);
+      if (construction.type === "replaceCenter") {
+        habitat.centers.push(construction.center);
+        if (construction.center === "defense" && ["spires", "aegis"].includes(factionRules(player))) habitat.defenseGridOrigin = factionRules(player);
+        if (construction.center !== "defense" && factionRules(player) === "aegis") player.legacyMetrics.aegisEconomicCenterBuilt = true;
+        player.legacyMetrics.builtCenters[game.era - 1]++;
+        if (construction.center !== "defense" && activePolicy(game) === "infrastructure-grants") markPolicyUsed(game, playerId, "center");
+      }
+      game.log.unshift(`${player.name} ${construction.type === "replaceCenter" ? `replaced a ${removed} Center with ${construction.center}` : `removed a ${removed} Center`} at ${habitat.id}.`);
+      continue;
+    }
+    if (construction.type === "colony") {
+      buildColonyShip(game, playerId, order.habitatId);
+      continue;
+    }
     const cost = constructionCost(game, playerId, order.habitatId, order);
     if (!habitat?.tier || !cost || !canPay(player, cost)) continue;
     if (
       construction.type === "upgrade" &&
-      ((habitat.tier === "Outpost" && player.tech.Resource < 2) ||
+      ((factionRules(player) === "spires" && habitat.tier === "Colony") ||
+        (habitat.tier !== "Outpost" && habitat.tier !== "Colony") ||
+        (habitat.tier === "Outpost" && player.tech.Resource < 2) ||
         (habitat.tier === "Colony" && player.tech.Resource < 3))
     )
       continue;
     if (construction.type === "center") {
-      const cap = habitat.tier === "Outpost" ? 1 : habitat.tier === "Colony" ? 2 : 3;
-      if (habitat.centers.length >= cap) continue;
+      const cap = habitatSlots(habitat.tier);
+      if (habitat.centers.length + (habitat.portalDestinations?.length || 0) >= cap) continue;
       if (construction.center === "defense" && habitat.centers.includes("defense")) continue;
     }
     if (!claimHabitatConstruction(game, habitat.id)) continue;
@@ -303,8 +375,11 @@ function resolveConstruction(
       habitat.tier = habitat.tier === "Outpost" ? "Colony" : "Metropolis";
       player.legacyMetrics.upgradedHabitats[game.era - 1]++;
       player.legacyMetrics.habitatDevelopmentHexes[game.era - 1].push(habitat.id);
-    } else {
+    } else if (construction.type === "center") {
       habitat.centers.push(construction.center);
+      if (construction.center !== "defense" && activePolicy(game) === "infrastructure-grants") markPolicyUsed(game, playerId, "center");
+      if (factionRules(player) === "aegis" && construction.center !== "defense") player.legacyMetrics.aegisEconomicCenterBuilt = true;
+      if (construction.center === "defense" && ["spires", "aegis"].includes(factionRules(player))) habitat.defenseGridOrigin = factionRules(player);
       player.legacyMetrics.builtCenters[game.era - 1]++;
       player.legacyMetrics.habitatDevelopmentHexes[game.era - 1].push(habitat.id);
     }
@@ -317,6 +392,7 @@ function resolveTechnology(
 ) {
   for (const { playerId, order } of orders) {
     if (order.kind !== "technology") continue;
+    if (game.players[playerId].techAdvancedTurn === game.turn) continue;
     const player = game.players[playerId],
       next = player.tech[order.branch] + 1;
     if (next > 4) continue;
@@ -324,6 +400,7 @@ function resolveTechnology(
     if (!canPay(player, cost)) continue;
     const discount = researchAgreementDiscount(game, player);
     spend(player, cost);
+    if (activePolicy(game) === "scientific-exchange") markPolicyUsed(game, playerId, "technology");
     player.tech[order.branch] = next;
     player.techAdvancedTurn = game.turn;
     player.legacyMetrics.technologyAdvances[game.era - 1].push(order.branch);
@@ -336,10 +413,10 @@ function resolveTributes(
   orders: Array<{ playerId: number; order: SecretOrder }>,
 ) {
   const target = gateTarget(game),
-    cost = tributeCosts[game.era],
     remaining = new Map(
       game.players.map((player) => [player.id, structuredClone(player)]),
     ),
+    projectedPolicy = { ...game, policyUses: { ...(game.policyUses || {}) } },
     accepted = new Map<number, number>(),
     valid: Array<{ playerId: number; order: SecretOrder }> = [];
   for (const entry of orders) {
@@ -349,18 +426,23 @@ function resolveTributes(
       count = accepted.get(entry.playerId) || 0;
     if (
       (game.era < finalEra(game) && (player.eraTributes[game.era - 1] || count > 0)) ||
-      !canPay(budget, cost)
+      !canPay(budget, policyCost(projectedPolicy, entry.playerId, "tribute", tributeCosts[game.era]))
     )
       continue;
-    spend(budget, cost);
+    spend(budget, policyCost(projectedPolicy, entry.playerId, "tribute", tributeCosts[game.era]));
+    if (activePolicy(projectedPolicy) === "horizon-priority") markPolicyUsed(projectedPolicy, entry.playerId, "tribute");
     accepted.set(entry.playerId, count + 1);
     valid.push(entry);
   }
   for (const { playerId } of valid) {
     const player = game.players[playerId];
+    const cost = policyCost(game, playerId, "tribute", tributeCosts[game.era]);
     spend(player, cost);
+    if (activePolicy(game) === "horizon-priority") markPolicyUsed(game, playerId, "tribute");
     player.tributes++;
     player.eraTributes[game.era - 1]++;
+    game.gateLedger ||= [];
+    game.gateLedger.push({ turn: game.turn, era: game.era, playerId, cost: { ...cost } });
     game.log.unshift(`${player.name} fulfilled a sealed Horizon Gate Tribute Order.`);
   }
   game.gate = Math.min(target, game.gate + valid.length);
@@ -381,12 +463,14 @@ function produce(game: GameState, playerId: number) {
           (hex.kind === "labor" ? multiplier : 0) +
           hex.centers.filter((center) => center === "labor").length * multiplier,
         0,
-      ),
+      ) - (player.laborPenalty || 0),
   );
   player.labor = player.laborCap;
   const defaultHome = factionLibrary[player.faction].homeProduction;
   const flexible = factionRules(player) === "varkesh"
     ? (["material", "currency"] as Resource[])
+    : factionRules(player) === "helix"
+      ? (["research", "material", "currency"] as Resource[])
     : factionRules(player) === "farbound"
       ? (["research", "currency"] as Resource[])
       : [defaultHome];
@@ -394,6 +478,7 @@ function produce(game: GameState, playerId: number) {
     ? (player.homeProductionChoice || defaultHome)
     : defaultHome;
   player.resources[homeProduction] += multiplier;
+  player.lastHomeProduction = homeProduction;
   for (const hex of owned) {
     if (
       economicHexKinds.includes(hex.kind as (typeof economicHexKinds)[number]) &&
@@ -407,6 +492,7 @@ function produce(game: GameState, playerId: number) {
       )
         player.resources[center as Resource] += multiplier;
   }
+  produceShattered(game, playerId);
   const eraIndex = game.era - 1,
     amounts = player.legacyMetrics.productionAmounts[eraIndex],
     types: (Resource | "labor")[] = [];
@@ -430,12 +516,18 @@ function produce(game: GameState, playerId: number) {
 export function resolveSecretOrders(game: GameState) {
   if (game.orderProtocol.phase !== "ready")
     return { ok: false, message: "Every civilization must seal Orders first." };
-  const all = game.orderProtocol.submissions.flatMap((submission) =>
+  const resolutionBefore = captureResolutionSnapshot(game),
+    resolvedSubmissions = structuredClone(game.orderProtocol.submissions),
+    resolvedTurn = game.turn,
+    resolvedEra = game.era,
+    all = game.orderProtocol.submissions.flatMap((submission) =>
     submission.orders.map((order) => ({ playerId: submission.playerId, order })),
   );
   const before = game.log.length;
   game.orderProtocol.phase = "resolved";
+  resolvePolicyVotes(game, all);
   resolveLongRangeSurveys(game, all);
+  resolveShatteredOrders(game, all.filter((entry) => entry.order.kind !== "bombard"));
   resolveSimultaneousCarrierMoves(
     game,
     all
@@ -450,20 +542,27 @@ export function resolveSecretOrders(game: GameState) {
         path: order.path,
       })),
   );
+  resolveShatteredOrders(game, all.filter((entry) => entry.order.kind === "bombard"));
   resolveCivilianMovement(game, all);
+  // Habitat Modules are available to Establish Orders sealed for the same Turn.
+  // All other construction still resolves after settlement as before.
+  resolveConstruction(game, all, (order) => order.construction.type === "module");
   resolveLocations(game, all);
-  resolveConstruction(game, all);
+  for (const { playerId, order } of all) if (order.kind === "openPortal") resolvePortalOrder(game, playerId, order.vesselId, order.replaceCenterIndex);
+  resolveConstruction(game, all, (order) => order.construction.type !== "module");
   resolveTechnology(game, all);
   resolveTributes(game, all);
   refreshContacts(game);
   evaluateLegacy(game);
-  recordGameSnapshot(game, game.turn);
-
   if (game.turn % 4 === 0) scoreHiddenEra(game, game.era);
   if (game.turn >= totalTurns(game)) finalizeGame(game);
-  else {
+  recordGameSnapshot(game, game.turn);
+  if (!game.result) {
     game.turn++;
+    const previousEra = game.era;
     game.era = Math.min(finalEra(game), Math.ceil(game.turn / 4));
+    if (game.era !== previousEra) startEraPolicy(game);
+    prepareHiddenChoicesForEra(game, game.era);
     processNewTurnDiplomacy(game, game.turn);
     for (const player of game.players) {
       player.disabled = false;
@@ -471,6 +570,8 @@ export function resolveSecretOrders(game: GameState) {
       beginFleetTurn(game, player.id);
       beginFactionTurn(game, player.id);
       beginExplorationTurn(game, player.id);
+      beginColonyTurn(game, player.id);
+      beginShatteredTurn(game, player.id);
     }
     game.active = 0;
     game.selected = startingHex(game, 0);
@@ -482,6 +583,9 @@ export function resolveSecretOrders(game: GameState) {
       lastResolution: game.log.slice(0, game.log.length - before),
     };
   }
+  const resolutionEvents = game.log.slice(0, game.log.length - before);
+  game.resolutionBriefs = buildResolutionBriefs(game, resolutionBefore, resolvedTurn, resolvedEra, resolutionEvents);
+  game.turnReplays = [...(game.turnReplays || []), buildTurnReplay(game, resolutionBefore, resolvedSubmissions, resolvedTurn, resolvedEra, resolutionEvents)].slice(-24);
   return { ok: true, message: "All sealed Orders resolved simultaneously." };
 }
 
@@ -497,6 +601,8 @@ export function orderLabel(order: SecretOrder) {
       return `Public scan ${order.hexIds.join(", ")}`;
     case "farboundForwardScan":
       return `Private Forward Scan ${order.hexId}`;
+    case "wayfarerDeepRecon":
+      return `Private Deep Recon ${order.hexId}`;
     case "colonyMove":
       return `Colony Ship to ${order.destination}`;
     case "civilianMove":
@@ -505,8 +611,20 @@ export function orderLabel(order: SecretOrder) {
       return `Long-Range Survey ${order.hexId}`;
     case "establish":
       return `Establish Habitat at ${order.hexId}`;
+    case "migration":
+      return `Migrate ${order.mobileHabitatId} to ${order.destination}`;
+    case "bombard":
+      return `Bombard ${order.targetHexId}${order.strength ? ` at strength ${order.strength}` : ""}`;
+    case "factoryOutput":
+      return `Set Factory at ${order.habitatId} to ${order.output}`;
+    case "transferBlockade":
+      return `Transfer ${order.blockadeId} to ${order.toPlayerId}`;
+    case "blockadeCargo":
+      return `${order.action === "load" ? "Load" : "Deploy"} ${order.blockadeId} ${order.action === "load" ? "onto" : "from"} ${order.carrierId}`;
     case "prospect":
       return "Prospect current world";
+    case "openPortal": return `Open Homeworld portal with ${order.vesselId}`;
+    case "policyVote": return `Vote ${order.influence} Influence for ${order.policyId}`;
     case "construct":
       return `${order.construction.type === "module"
         ? "Habitat Module"
@@ -516,11 +634,31 @@ export function orderLabel(order: SecretOrder) {
             ? order.construction.center === "defense" ? "Defense Grid" : `${order.construction.center[0].toUpperCase()}${order.construction.center.slice(1)} Center`
             : order.construction.type === "carrier"
               ? carrierLibrary[order.construction.carrier].name
-              : order.construction.type === "civilian"
-                ? civilianLibrary[order.construction.civilian].name
-                : order.construction.type === "exploration"
-                  ? `${order.construction.vessel} exploration vessel`
-                  : `${order.construction.pairs * 2} Combat Units`} at ${order.habitatId}`;
+              : order.construction.type === "colony"
+                ? "Colony Ship"
+                : order.construction.type === "civilian"
+                  ? civilianLibrary[order.construction.civilian].name
+              : order.construction.type === "exploration"
+                    ? `${order.construction.vessel} exploration vessel`
+                    : order.construction.type === "arcology"
+                      ? "Arcology"
+                      : order.construction.type === "removeCenter"
+                        ? "Remove Center"
+                      : order.construction.type === "replaceCenter"
+                        ? "Replace Center"
+                      : order.construction.type === "enhanceCenter"
+                        ? "Enhanced Center"
+                        : order.construction.type === "factory"
+                          ? "Factory"
+                      : order.construction.type === "mobileHabitat"
+                            ? order.construction.vessel
+                            : order.construction.type === "mobileCenter"
+                              ? `${order.construction.center} Mobile Center`
+                            : order.construction.type === "blockade"
+                              ? "Blockade Platform"
+                              : order.construction.type === "caravanGuard"
+                                ? "Caravan Guard"
+                    : `${order.construction.pairs * 2} Combat Units`} at ${order.habitatId}`;
     case "technology":
       return `Advance ${order.branch}`;
     case "tribute":

@@ -2,6 +2,8 @@ import { validateRoomCommand, type RoomCommandEnvelope } from "../../../../../ga
 import { executeRoomCommand } from "../../../../../game/server/room-actions";
 import { getRoomRepository } from "../../../../../game/server/runtime";
 import { getContentCatalog, installContentCatalog } from "../../../../../game/content";
+import { enforceRateLimit } from "../../../../../game/server/rate-limit";
+import { getAccountService } from "../../../../../game/server/runtime";
 
 type RouteContext = {
   params: { code: string } | Promise<{ code: string }>;
@@ -31,6 +33,7 @@ function errorStatus(message: string) {
 
 export async function POST(request: Request, context: RouteContext) {
   try {
+    await enforceRateLimit(request,"room-command",180);
     installContentCatalog(getContentCatalog());
     const contentLength = Number(request.headers.get("content-length") || 0);
     if (contentLength > 60_000) throw new Error("Room command payload exceeds the 60 KB limit.");
@@ -69,6 +72,11 @@ export async function POST(request: Request, context: RouteContext) {
         autoResolveWhenReady: true,
       },
     );
+    if (result.ok) {
+      const completed = await getRoomRepository().get(code.trim().toUpperCase());
+      if (completed?.status === "complete" && completed.game.result)
+        await getAccountService().settleCompletedRoom(completed);
+    }
 
     return Response.json(result, {
       status: result.ok ? 200 : 400,
@@ -81,7 +89,7 @@ export async function POST(request: Request, context: RouteContext) {
     return Response.json(
       { ok: false, error: message },
       {
-        status: errorStatus(message),
+        status: message.startsWith("Too many") ? 429 : errorStatus(message),
         headers: { "cache-control": "no-store" },
       },
     );

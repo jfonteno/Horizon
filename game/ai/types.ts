@@ -1,6 +1,6 @@
 import type { SecretOrder, TechnologyBranch } from "../types";
 
-export type BotDifficulty = "novice" | "standard" | "advanced" | "expert";
+export type BotDifficulty = "easy" | "medium" | "hard" | "emperor" | "novice" | "standard" | "advanced" | "expert";
 
 export type BotProfile = {
   profileVersion: 1;
@@ -53,6 +53,55 @@ export type BotProfile = {
 
 export type BotArchetype = "runaway" | "militarist" | "expansionist" | "broker" | "gate-steward" | "free-rider" | "balanced";
 
+export type BotActionTag =
+  | "explore"
+  | "survey"
+  | "establish"
+  | "develop"
+  | "center"
+  | "technology"
+  | "military"
+  | "recruit"
+  | "carrier"
+  | "combat"
+  | "trade"
+  | "agreement"
+  | "tribute"
+  | "prospect"
+  | "defend"
+  | "material"
+  | "currency"
+  | "research"
+  | "influence"
+  | "labor";
+
+export type BotGoalCategory = "hidden" | "universal" | "civilization" | "gate";
+
+export type BotGoal = {
+  objectiveId: string;
+  name: string;
+  category: BotGoalCategory;
+  lp: number;
+  progress: number;
+  target: number;
+  completion: number;
+  feasibility: number;
+  deadlineTurn: number;
+  score: number;
+  tags: BotActionTag[];
+  reason: string;
+};
+
+export type BotObjectivePlan = {
+  generatedTurn: number;
+  primaryGoalIds: string[];
+  goals: BotGoal[];
+  actionWeights: Partial<Record<BotActionTag, number>>;
+  expectedLP: number;
+};
+
+export type BotStance = "cooperate" | "selective" | "contain" | "deter" | "gate-support" | "exploit";
+
 export type BotOpponentModel = {
   playerId: number;
   observedTurn: number;
@@ -65,6 +114,18 @@ export type BotOpponentModel = {
   tradeReliability: number;
   gateReliability: number;
   archetypes: BotArchetype[];
+  production: number;
+  technology: number;
+  agreements: number;
+  objectivePressure: number;
+  victoryThreat: number;
+  scoreFloor: number;
+  scoreCeiling: number;
+  tradeFit: number;
+  dependencyRisk: number;
+  gateRisk: number;
+  relationship: number;
+  stance: BotStance;
 };
 
 export type BotCommitment = {
@@ -82,11 +143,13 @@ export type BotMemoryState = {
   opponents: BotOpponentModel[];
   commitments: BotCommitment[];
   metaFlags: string[];
+  projects?: import("./projects").BotProjectMemory[];
   strategy?: BotStrategicPlan;
 };
 
 export type BotStrategicPlan = {
   generatedTurn: number;
+  difficulty: BotDifficulty;
   horizonTurns: number;
   doctrine: string;
   gateEmergency: boolean;
@@ -96,11 +159,22 @@ export type BotStrategicPlan = {
   contributionDueTurn: number;
   reserve: Record<"material" | "currency" | "research" | "influence", number>;
   followupReserve: Record<"material" | "currency" | "research" | "influence", number>;
+  gateDemand: Record<"material" | "currency" | "research" | "influence", number>;
   projectedDeficits: Partial<Record<"material" | "currency" | "research" | "influence", number>>;
   priorityResources: Array<"material" | "currency" | "research" | "influence">;
   leaderId?: number;
   victoryPressure: number;
+  objectivePlan: BotObjectivePlan;
+  projectPlan: import("./projects").BotProjectPlan;
+  priorities: BotPriority[];
+  defenseNeeds: Record<string, number>;
 };
+
+export type BotPriorityKey = "agreement" | "trade" | "influence" | "economicCenters" |
+  "resourceTechnology" | "policyTechnology" | "militaryTechnology" | "upgrade" |
+  "recruit" | "expand" | "explore" | "mobileCenters" | "tribute";
+
+export type BotPriority = { key: BotPriorityKey; weight: number; reason: string };
 
 export type BotCandidate = {
   id: string;
@@ -139,6 +213,7 @@ export type BotDecisionReport = {
   commitments: string[];
   metaFlags: string[];
   strategicForecast: string[];
+  goalAnalysis: string[];
   knowledgeBoundary: string;
   submissionOk: boolean;
   submissionMessage: string;

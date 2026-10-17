@@ -2,8 +2,7 @@ import type { GameHistoryPoint, GameState } from "./types";
 import { totalCombatUnits } from "./rules/fleet";
 
 export function playerTradeCount(game: GameState, playerId: number) {
-  return game.proposals.filter((proposal) => proposal.kind === "trade" &&
-    proposal.status === "accepted" && (proposal.from === playerId || proposal.to === playerId)).length;
+  return game.players[playerId].legacyMetrics.directTradeCount;
 }
 
 export function createGameSnapshot(game: GameState, turn: number): GameHistoryPoint {

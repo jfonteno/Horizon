@@ -25,7 +25,7 @@ export function projectPrivateGame(
       ? candidate
       : {
           ...candidate,
-          hiddenLegacy: {},
+          hiddenLegacy: game.result ? candidate.hiddenLegacy : {},
           privateSurveys: [],
           negotiationSurveyUsedTurn: undefined,
           surveyUsedTurn: undefined,
@@ -37,6 +37,8 @@ export function projectPrivateGame(
       return proposal.seller === playerId || proposal.buyer === playerId;
     return proposal.from === playerId || proposal.to === playerId;
   });
+  game.brokerageOffers = (game.brokerageOffers || []).filter((offer) =>
+    [offer.meridianId, offer.a, offer.b].includes(playerId));
   game.pendingLabor = game.pendingLabor.filter(
     (pending) => pending.playerId === playerId,
   );
@@ -48,6 +50,7 @@ export function projectPrivateGame(
       (carrier) => carrier.id === carrierId && carrier.owner === playerId,
     ),
   );
+  game.resolutionBriefs = game.resolutionBriefs?.filter((brief) => brief.playerId === playerId);
   return game;
 }
 
@@ -58,7 +61,7 @@ export function projectSpectatorGame(source: GameState): GameState {
   );
   game.players = game.players.map((player) => ({
     ...player,
-    hiddenLegacy: {},
+    hiddenLegacy: game.result ? player.hiddenLegacy : {},
     privateSurveys: [],
     negotiationSurveyUsedTurn: undefined,
     surveyUsedTurn: undefined,
@@ -70,5 +73,6 @@ export function projectSpectatorGame(source: GameState): GameState {
   game.selectedCarrierIds = [];
   game.botReports = [];
   game.botMemory = [];
+  game.resolutionBriefs = [];
   return game;
 }

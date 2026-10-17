@@ -1,0 +1,54 @@
+{
+  "profileVersion": 1,
+  "id": "tutorial-guide",
+  "name": "First Horizon Guide",
+  "description": "A readable practice opponent that expands, trades, contributes to the Gate, and avoids destructive early attacks.",
+  "difficulty": "novice",
+  "planning": {
+    "beamWidth": 12,
+    "candidateLimit": 28,
+    "maxOrders": 5,
+    "threatHorizon": 1,
+    "riskTolerance": 0.2,
+    "reserveByEra": [0, 1, 1, 2],
+    "uncertaintyPenalty": 0.55,
+    "diplomacyHorizon": 2,
+    "gateSafetyMargin": 1,
+    "forecastHorizon": 2,
+    "minimumGateConfidence": 0.95
+  },
+  "priorities": {
+    "legacy": 1.0,
+    "economy": 1.3,
+    "technology": 1.1,
+    "expansion": 1.4,
+    "military": 0.65,
+    "diplomacy": 1.45,
+    "gate": 1.8,
+    "denial": 0.1,
+    "survival": 1.0
+  },
+  "technology": {
+    "Military": 0.7,
+    "Economy": 1.3,
+    "Policy": 1.25,
+    "Exploration": 1.1,
+    "Resource": 1.2
+  },
+  "behaviors": {
+    "punishFreeRiders": false,
+    "avoidMutualDestruction": true,
+    "protectGateCompletion": true,
+    "preferFlexibleResources": true,
+    "exploitFactionSynergy": true,
+    "recordCounterfactuals": false,
+    "coordinateGateSupport": true,
+    "useMarketForGate": true,
+    "modelOpponents": false,
+    "routeColonies": true,
+    "redTeamNotebook": false,
+    "multiTurnPlanning": false,
+    "factionDoctrine": true,
+    "victoryImpact": false
+  }
+}

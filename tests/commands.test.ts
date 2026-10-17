@@ -55,6 +55,7 @@ test("diplomacy proposals remain private and only the recipient can respond", as
   assert.ok(proposalId);
   const recipient = await service.resume(host.code, second.token);
   assert.equal(recipient.game.proposals[0]?.id, proposalId);
+  const recipientMaterialBefore = recipient.game.players[1].resources.material;
 
   const unauthorized = await executeRoomCommand(repository, {
     code: host.code, token: host.token, expectedRevision: proposed.session!.revision,
@@ -68,7 +69,7 @@ test("diplomacy proposals remain private and only the recipient can respond", as
     command: { kind: "respondProposal", proposalId, accept: true },
   });
   assert.equal(accepted.ok, true);
-  assert.equal(accepted.session?.game.players[1].resources.material, 1);
+  assert.equal(accepted.session?.game.players[1].resources.material, recipientMaterialBefore + 1);
   assert.equal(accepted.session?.game.players[1].resources.currency, 3);
 });
 
@@ -127,6 +128,20 @@ test("network Farbound survey is private, once per Turn, and available before Or
   });
   assert.equal(repeated.ok, false);
   assert.match(repeated.message, /already gathered/i);
+});
+
+test("network players may seal Orders directly while the Turn is labeled Negotiation", async () => {
+  const { repository, service, game } = fixture();
+  assert.equal(game.orderProtocol.phase, "negotiation");
+  const host = await activate(repository, service, await service.create(game, "Commander", "network"));
+  const submitted = await executeRoomCommand(repository, {
+    code: host.code,
+    token: host.token,
+    expectedRevision: host.revision,
+    command: { kind: "submitOrders", orders: [] },
+  });
+  assert.equal(submitted.ok, true);
+  assert.equal(submitted.session?.game.orderProtocol.submissions[0]?.playerId, 0);
 });
 
 test("network agreement commands create and schedule treaty withdrawal", async () => {

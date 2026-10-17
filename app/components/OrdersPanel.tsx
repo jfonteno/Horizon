@@ -12,6 +12,8 @@ import {
   totalOrderCost,
 } from "../../game";
 import type { GameState, Resource, SecretOrder } from "../../game";
+import ShatteredReachPanel from "./ShatteredReachPanel";
+import PolicyVotePanel from "./PolicyVotePanel";
 
 export default function OrdersPanel({
   game,
@@ -73,6 +75,9 @@ export default function OrdersPanel({
       <b>Map-first command</b>
       <span>Select vessels on the map for movement and actions. Use Build and Tech for purchases. This console reviews the complete private draft.</span>
     </div>
+
+    <ShatteredReachPanel game={game} draft={draft} setDraft={setDraft}/>
+    <PolicyVotePanel game={game} playerId={player.id} draft={draft} setDraft={setDraft}/>
 
     {hiddenRequired && <div className="hidden-required">
       <div><b>Hidden Objective required</b><span>Choose one private Era {game.era} objective before ending this Turn.</span></div>

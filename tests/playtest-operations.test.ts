@@ -65,7 +65,7 @@ test("host playtest reports include metrics, diagnostics, and audit status", asy
   });
   const room = await service.authenticateHost(host.code, host.token);
   const report = await createPlaytestReport(room);
-  assert.equal(report.gameVersion, "0.20.2");
+  assert.equal(report.gameVersion, "0.35.0");
   assert.equal(report.setup.seed, 18001);
   assert.equal(report.setup.factions.length, 4);
   assert.equal(report.audit.integrity.ok, true);
@@ -127,7 +127,8 @@ test("pre-0.18 rooms migrate without claiming a complete audit history", async (
   });
   const migrated = normalizeStoredRoom(legacy as StoredRoom);
   assert.deepEqual(migrated.audit, []);
-  assert.equal(migrated.schemaVersion, 5);
+  assert.equal(migrated.schemaVersion, 12);
+  assert.equal(migrated.autoStartWhenReady, false);
   assert.equal(migrated.turnTimerSeconds, null);
   assert.deepEqual(migrated.seats.map((seat) => seat.selectedFaction), migrated.game.players.map((player) => player.faction));
   const status = await verifyRoomAudit(migrated);
@@ -142,7 +143,26 @@ test("existing 61-hex Standard Board rooms retain legacy geometry", async () => 
   const host = await service.create(game, "Host", "network");
   const stored = await service.getStoredRoom(host.code);
   stored.game.mapId = "standard-board";
+  stored.game.schemaVersion = 15;
   const migrated = normalizeStoredRoom(stored);
   assert.equal(migrated.game.mapId, "standard-board-61");
   assert.equal(migrated.game.hexes.filter((hex) => hex.kind !== "rift").length, 61);
+});
+
+test("existing 91-hex Standard Board and Shattered Reach rooms retain their geometry", async () => {
+  const repository = new MemoryRoomRepository();
+  const service = new RoomService(repository);
+  const standard = createGame(4, [...factions], "standard-board-91", "horizon-base", 18003);
+  const standardHost = await service.create(standard, "Host", "network");
+  const storedStandard = await service.getStoredRoom(standardHost.code);
+  storedStandard.game.mapId = "standard-board";
+  storedStandard.game.schemaVersion = 15;
+  assert.equal(normalizeStoredRoom(storedStandard).game.mapId, "standard-board-91");
+
+  const reach = createGame(4, [...factions], "shattered-reach-legacy", "horizon-base", 18004);
+  const reachHost = await service.create(reach, "Host", "network");
+  const storedReach = await service.getStoredRoom(reachHost.code);
+  storedReach.game.mapId = "shattered-reach";
+  storedReach.game.schemaVersion = 15;
+  assert.equal(normalizeStoredRoom(storedReach).game.mapId, "shattered-reach-legacy");
 });

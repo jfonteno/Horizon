@@ -81,6 +81,10 @@ async function loadPack(directory: string) {
     name: manifest.name,
     version: manifest.version,
     description: manifest.description,
+    coverArt: manifest.coverArt ? await asset(directory, manifest.coverArt) : undefined,
+    modules: manifest.modules || [],
+    dependencies: manifest.dependencies || [],
+    storeProductIds: manifest.storeProductIds,
     maps: maps.map((map) => map.id),
     factions: factions.map((faction) => faction.id),
   };
@@ -98,7 +102,7 @@ export async function loadContentPacks(rootDirectory: string): Promise<ContentCa
     throw error;
   }
   const mapIds = new Set<string>(["shattered-reach"]);
-  const factionIds = new Set<string>(["varkesh", "helix", "foundry", "aurelians", "meridian", "farbound"]);
+  const factionIds = new Set<string>(["varkesh", "helix", "foundry", "aurelians", "meridian", "farbound", "spires", "aegis", "wayfarers", "salvo", "guilds"]);
   for (const entry of entries.filter((candidate) => candidate.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
     try {
       const loaded = await loadPack(resolve(root, entry.name));

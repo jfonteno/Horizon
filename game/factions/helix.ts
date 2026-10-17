@@ -11,8 +11,9 @@ export const helix: FactionDefinition = {
     { name: "Accelerated Research", summary: "Every normal Technology advance costs 1 less Research, but never less than 1 Research." },
     { name: "Research Infrastructure", summary: "Research Centers cost only 1 Material, 1 Currency, and 1 Labor." },
     { name: "Technology Exchange", summary: "Offer a Technology level you possess to a civilization that owns the immediately preceding level. The buyer pays reduced Research plus negotiated compensation." },
-    { name: "Scientific Foundation", summary: "Begin with 2 Research and a Research-producing Homeworld." },
+    { name: "Scientific Foundation", summary: "Begin with 1 Material, 2 Research, and a Research-producing Homeworld." },
+    { name: "Research Reallocation", summary: "During Orders, choose Research, Material, or Currency for your Homeworld's next Production. This replaces its normal Research output for that Production; the choice persists until changed." },
   ],
   objectives: ["Research Network: 3 Research Centers", "Technological Breadth: 3 branches at III", "Knowledge Exporter: sell technology twice"],
-  initialize(player) { player.resources.research = 2; },
+  initialize(player) { player.resources.material = 1; player.resources.research = 2; },
 };

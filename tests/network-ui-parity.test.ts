@@ -40,22 +40,25 @@ test("Network map actions provide draft persistence and navigation aids", async 
   assert.match(source, /Center/);
 });
 
-test("Network UI uses map-first workspaces, proposal alerts, and forced Hidden selection", async () => {
+test("Network UI uses map-first workspaces, right drawers, consolidated activity, and conditional Hidden selection", async () => {
   const source = await readFile("app/components/network/NetworkGameBoard.tsx", "utf8");
   assert.match(source, /network-command-dock/);
   assert.match(source, /network-workspace-overlay/);
-  assert.match(source, /proposal-alert/);
+  assert.match(source, /notification-popover/);
+  assert.doesNotMatch(source, /className="proposal-alert"/);
   assert.match(source, /hidden-required-overlay/);
-  for (const panel of ["diplomacy", "legacy", "economy", "technology"])
+  assert.match(source, /rightPanels:[^;]+build[^;]+economy[^;]+technology[^;]+gate[^;]+legacy[^;]+resources/);
+  assert.match(source, /network-side-drawer/);
+  for (const panel of ["diplomacy"])
     assert.match(source, new RegExp(`fullScreenPanels[^;]+[\"']${panel}[\"']`));
 });
 
 test("Network UI exposes contextual map actions, visible draft markers, and actionable notifications", async () => {
   const board = await readFile("app/components/network/NetworkGameBoard.tsx", "utf8");
   const diplomacy = await readFile("app/components/network/NetworkDiplomacyPanel.tsx", "utf8");
-  for (const surface of ["map-context-menu", "faction-scorebar", "notification-popover", "seal-checklist", "unit-order-marker", "hex-order-marker", "quickConstructions"])
+  for (const surface of ["map-context-menu", "faction-scorebar", "notification-popover", "seal-checklist", "unit-order-marker", "hex-order-marker", "openBuildAt"])
     assert.match(board, new RegExp(surface), `${surface} must remain available in Network play`);
-  assert.match(board, /Farbound Survey/);
+  assert.match(board, /Private Forward Scan/);
   assert.match(board, /transferCombatUnit/);
   assert.match(board, /initialTargetId=/);
   assert.match(diplomacy, /initialTargetId/);
@@ -65,7 +68,21 @@ test("Network vessel selection remains responsive before Orders begin", async ()
   const board = await readFile("app/components/network/NetworkGameBoard.tsx", "utf8");
   assert.match(board, /function selectMapUnit\(unit: MapUnit\)[^{]*\{\s*setMapUnit\(unit\)/);
   assert.doesNotMatch(board, /function selectMapUnit\(unit: MapUnit\)[^{]*\{[^}]*if \(!canPlan\) return/);
+  assert.match(board, /const canDraft =[\s\S]+?\["negotiation", "orders"\]/);
+  assert.match(board, /owner\.explorationVessels/);
+  assert.match(board, /key=\{vessel\.id\}/);
+  assert.match(board, /Publicly scan adjacent sector/);
   assert.match(board, /data-map-columns=\{map\.columns\}/);
+  assert.doesNotMatch(board, /const canPlan/);
+  assert.match(board, /disabled=\{[\s\S]*?player\.forwardScanUsedTurn === game\.turn[\s\S]*?Private Forward Scan/);
+});
+
+test("Network Orders can be sealed directly during Negotiation", async () => {
+  const board = await readFile("app/components/network/NetworkGameBoard.tsx", "utf8");
+  const actions = await readFile("game/server/room-actions.ts", "utf8");
+  assert.match(board, /const canDraft =[\s\S]+?\["negotiation", "orders"\]/);
+  assert.match(board, /disabled=\{[\s\S]*?!canDraft[\s\S]*?kind: "submitOrders"/);
+  assert.match(actions, /\["negotiation", "orders"\]\.includes\(game\.orderProtocol\.phase\)/);
 });
 
 test("Network faction selection exposes illustrated full-screen profiles", async () => {

@@ -4,7 +4,7 @@ services:
   horizon:
     build:
       context: .
-    image: horizon-shattered-reach:0.19.2
+    image: horizon-shattered-reach:0.34.8
     restart: unless-stopped
     user: "${HORIZON_UID:-1000}:${HORIZON_GID:-1000}"
     environment:
@@ -13,6 +13,19 @@ services:
       PORT: 3000
       HORIZON_DATA_DIR: /data/rooms
       HORIZON_CONTENT_DIR: /data/content
+      HORIZON_ACCOUNT_DIR: /data/accounts
+      HORIZON_OPERATIONS_PATH: /data/operations/settings.json
+      HORIZON_MULTIPLAYER_VERIFICATION: ${HORIZON_MULTIPLAYER_VERIFICATION:-commander}
+      HORIZON_AUTH_SECRET: ${HORIZON_AUTH_SECRET:-}
+      HORIZON_ADMIN_ACCOUNT_IDS: ${HORIZON_ADMIN_ACCOUNT_IDS:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
+      HORIZON_STEAM_SIGNIN: ${HORIZON_STEAM_SIGNIN:-disabled}
+      HORIZON_EMAIL_PROVIDER: ${HORIZON_EMAIL_PROVIDER:-disabled}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      HORIZON_EMAIL_FROM: ${HORIZON_EMAIL_FROM:-}
     ports:
       - "127.0.0.1:${HORIZON_PORT:-3000}:3000"
     volumes:

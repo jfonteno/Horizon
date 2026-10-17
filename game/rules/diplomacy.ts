@@ -1,3 +1,4 @@
+import { activePolicy, markPolicyUsed, policyCost, policyUsed } from "./policy-deck";
 import type {
   AgreementProposal,
   AgreementType,
@@ -13,6 +14,8 @@ import type {
 } from "../types";
 import { factionRules } from "../factions";
 import { technologyCosts } from "./economy";
+import { projectedOrderBudget } from "./purchases";
+import { blockadeConstructionCost, legalBlockadeSaleDestinations, placeCommissionedBlockade, placeSoldBlockade } from "./blockades";
 
 export const emptyTradeBundle = (): TradeBundle => ({
   material: 0,
@@ -176,7 +179,7 @@ export function refreshContacts(game: GameState): void {
       const distance = habitatDistance(game, a, b);
       const vesselsA = [
         game.players[a].explorer,
-        game.players[a].colonyShip,
+        ...game.players[a].colonyShips.map((unit) => unit.hex),
         ...game.carriers
           .filter((carrier) => carrier.owner === a)
           .map((carrier) => carrier.hex),
@@ -184,7 +187,7 @@ export function refreshContacts(game: GameState): void {
       ];
       const vesselsB = [
         game.players[b].explorer,
-        game.players[b].colonyShip,
+        ...game.players[b].colonyShips.map((unit) => unit.hex),
         ...game.carriers
           .filter((carrier) => carrier.owner === b)
           .map((carrier) => carrier.hex),
@@ -214,6 +217,8 @@ export function tradeEligibility(
   to: number,
 ): { ok: boolean; message: string; distance: number | null } {
   const distance = habitatDistance(game, from, to);
+  if (activePolicy(game) === "open-markets" && isContacted(game, from, to) && !policyUsed(game, from, "open-markets", "turn"))
+    return { ok: true, message: "Open Markets permits your first direct trade this Turn after contact.", distance };
   if (hasBenefit(game, from, to, "trade"))
     return {
       ok: true,
@@ -261,7 +266,70 @@ export function tradeEligibility(
 }
 
 export const bundleTotal = (bundle: TradeBundle) =>
-  Object.values(bundle).reduce((sum, amount) => sum + amount, 0);
+  Object.values(bundle).reduce((sum, amount) => sum + (amount || 0), 0);
+
+function validTradeBundle(bundle: TradeBundle) {
+  return ["material", "currency", "research", "labor", "influence"].every((resource) => {
+    const amount = bundle[resource as keyof TradeBundle] || 0;
+    return Number.isInteger(amount) && amount >= 0 && amount <= 99;
+  });
+}
+
+function influenceTradeEligibility(game: GameState, proposal: TradeProposal) {
+  for (const [id, bundle] of [[proposal.from, proposal.offer], [proposal.to, proposal.request]] as [number, TradeBundle][]) {
+    if ((bundle.influence || 0) > 0 &&
+      (factionRules(game.players[id]) !== "aurelians" || game.players[id].tech.Policy < 2))
+      return { ok: false, message: "Only Aurelians at Policy II may offer Influence in a direct trade." };
+  }
+  return { ok: true, message: "Influence trade is legal." };
+}
+
+function blockadeSaleEligibility(game: GameState, proposal: TradeProposal) {
+  if (!proposal.blockadeId && !proposal.blockadeCommission) return { ok: true, message: "" };
+  const seller = game.players[proposal.from];
+  if (factionRules(seller) !== "aegis")
+    return { ok: false, message: "Only Aegis may initiate a Blockade sale." };
+  if (seller.tech.Economy < 2)
+    return { ok: false, message: "Aegis Security Export requires Economy II." };
+  if (proposal.blockadeCommission) {
+    if (proposal.blockadeId) return { ok: false, message: "Choose either an existing Blockade or a new commission." };
+    const eligibility = tradeEligibility(game, proposal.from, proposal.to);
+    if (!eligibility.ok) return eligibility;
+    if (proposal.request.labor !== 0 || proposal.request.influence || ["material", "currency", "research"].some((resource) =>
+      !Number.isInteger(proposal.request[resource as TradableResource]) || proposal.request[resource as TradableResource] < 0))
+      return { ok: false, message: "Commission fees must use non-negative Material, Currency, or Research." };
+  } else {
+    const blockade = game.blockades.find((candidate) => candidate.id === proposal.blockadeId && candidate.owner === proposal.from && (candidate.active || candidate.carrierId) && candidate.readyTurn <= game.turn);
+    if (!blockade) return { ok: false, message: "The proposed Aegis Blockade is no longer available." };
+    if (!activeAgreements(game, proposal.from, proposal.to).length)
+      return { ok: false, message: "An existing Blockade may be sold only to a civilization with an active agreement." };
+  }
+  if (bundleTotal(proposal.offer))
+    return { ok: false, message: "A Blockade sale may request payment but cannot include additional offered resources." };
+  if (!legalBlockadeSaleDestinations(game, proposal.to).length)
+    return { ok: false, message: "The buyer has no controlled hex available for this Blockade." };
+  return { ok: true, message: "Blockade sale is legal." };
+}
+
+function blockadeCommissionTotal(fee: TradeBundle) {
+  return { material: blockadeConstructionCost.material + fee.material,
+    currency: blockadeConstructionCost.currency + fee.currency,
+    research: fee.research, labor: blockadeConstructionCost.labor };
+}
+
+/** Remove quantities that appear on both sides so the proposal reflects its net exchange. */
+export function normalizeTradeBundles(offer: TradeBundle, request: TradeBundle) {
+  const normalizedOffer = { ...offer };
+  const normalizedRequest = { ...request };
+  for (const resource of ["material", "currency", "research", "labor", "influence"] as const) {
+    const overlap = Math.min(normalizedOffer[resource] || 0, normalizedRequest[resource] || 0);
+    if (overlap) {
+      normalizedOffer[resource] = (normalizedOffer[resource] || 0) - overlap;
+      normalizedRequest[resource] = (normalizedRequest[resource] || 0) - overlap;
+    }
+  }
+  return { offer: normalizedOffer, request: normalizedRequest };
+}
 
 function availableLabor(game: GameState, playerId: number): number {
   const committed = game.pendingLabor
@@ -280,6 +348,7 @@ function canProvide(
     player.resources.material >= bundle.material &&
     player.resources.currency >= bundle.currency &&
     player.resources.research >= bundle.research &&
+    player.resources.influence >= (bundle.influence || 0) &&
     availableLabor(game, playerId) >= bundle.labor
   );
 }
@@ -296,6 +365,10 @@ function transferBundle(
       game.players[to].resources[resource] += bundle[resource];
     },
   );
+  if (bundle.influence) {
+    game.players[from].resources.influence -= bundle.influence;
+    game.players[to].resources.influence += bundle.influence;
+  }
   if (bundle.labor) {
     const effectiveTurn = game.turn + 1;
     game.pendingLabor.push({
@@ -315,9 +388,22 @@ export function addTradeProposal(
   game: GameState,
   proposal: TradeProposal,
 ): { ok: boolean; message: string } {
-  const eligibility = tradeEligibility(game, proposal.from, proposal.to);
+  const normalized = normalizeTradeBundles(proposal.offer, proposal.request);
+  proposal.offer = normalized.offer;
+  proposal.request = normalized.request;
+  if (!validTradeBundle(proposal.offer) || !validTradeBundle(proposal.request))
+    return { ok: false, message: "Trade quantities must be non-negative whole numbers up to 99." };
+  const influenceEligibility = influenceTradeEligibility(game, proposal);
+  if (!influenceEligibility.ok) return influenceEligibility;
+  const assetEligibility = blockadeSaleEligibility(game, proposal);
+  if (!assetEligibility.ok) return assetEligibility;
+  const eligibility = proposal.blockadeId || proposal.blockadeCommission ? { ok: true, message: assetEligibility.message } : tradeEligibility(game, proposal.from, proposal.to);
   if (!eligibility.ok) return eligibility;
-  if (!bundleTotal(proposal.offer) && !bundleTotal(proposal.request))
+  if ((proposal.counterDepth || 0) > 3)
+    return { ok: false, message: "Counteroffer chains are limited to three revisions." };
+  if (proposal.expiresAfterTurn !== undefined && proposal.expiresAfterTurn < game.turn)
+    return { ok: false, message: "That trade proposal has already expired." };
+  if (!proposal.blockadeCommission && !bundleTotal(proposal.offer) && !bundleTotal(proposal.request))
     return {
       ok: false,
       message: "A proposal must offer or request something.",
@@ -335,12 +421,49 @@ export function addTradeProposal(
       ok: false,
       message: "The proposer cannot currently provide that offer.",
     };
+  if (!canProvide(game, proposal.to, proposal.request) || proposal.blockadeCommission &&
+    !canPayRecord(game.players[proposal.to], blockadeCommissionTotal(proposal.request)))
+    return {
+      ok: false,
+      message: "The recipient cannot currently provide the requested resources.",
+    };
   establishContact(game, proposal.from, proposal.to);
   game.proposals.push(proposal);
   game.log.unshift(
     `${game.players[proposal.from].name} sent a direct-trade proposal to ${game.players[proposal.to].name}.`,
   );
   return { ok: true, message: "Trade proposal sent." };
+}
+
+export function counterTradeProposal(
+  game: GameState,
+  playerId: number,
+  originalId: string,
+  id: string,
+  offer: TradeBundle,
+  request: TradeBundle,
+) {
+  const original = game.proposals.find((candidate): candidate is TradeProposal => candidate.id === originalId && candidate.kind === "trade");
+  if (!original || original.status !== "pending") return { ok: false, message: "That trade proposal is no longer open." };
+  if (original.to !== playerId) return { ok: false, message: "Only the recipient may counter that proposal." };
+  if (original.blockadeId || original.blockadeCommission) return { ok: false, message: "Blockade sales must be accepted or rejected. Ask the Aegis player to send a revised offer." };
+  const proposal: TradeProposal = {
+    id,
+    kind: "trade",
+    from: playerId,
+    to: original.from,
+    offer: structuredClone(offer),
+    request: structuredClone(request),
+    createdTurn: game.turn,
+    status: "pending",
+    counterOf: original.id,
+    counterDepth: (original.counterDepth || 0) + 1,
+    expiresAfterTurn: game.turn,
+  };
+  const result = addTradeProposal(game, proposal);
+  if (!result.ok) return result;
+  original.status = "rejected";
+  return { ok: true, message: "Counteroffer sent and the previous proposal closed." };
 }
 
 export function agreementCost(
@@ -354,11 +477,11 @@ export function agreementCost(
     factionRules(player) === "meridian" &&
     !player.diplomacy.firstTradeAgreementUsed
   )
-    return 0;
-  return Math.max(
+    return policyCost(game, playerId, "agreement", { influence: 0 }).influence || 0;
+  return policyCost(game, playerId, "agreement", { influence: Math.max(
     0,
     agreementRules[type].cost - (player.tech.Policy >= 4 ? 1 : 0),
-  );
+  ) }).influence || 0;
 }
 
 export function addAgreementProposal(
@@ -424,14 +547,14 @@ export function technologyCost(
     : baseResearch;
   const factionDiscount = !exchange && factionRules(player) === "helix" ? 1 : 0;
   const agreementDiscount = researchAgreementDiscount(game, player);
-  return {
+  return policyCost(game, playerId, "technology", {
     research: Math.max(
       1,
       exchangeResearch - factionDiscount - agreementDiscount,
     ),
     labor,
     [branchResource(branch)]: branchCost,
-  };
+  });
 }
 
 function canPayRecord(
@@ -443,6 +566,13 @@ function canPayRecord(
       ? player.labor >= value
       : player.resources[key as keyof typeof player.resources] >= value,
   );
+}
+
+export function technologyExchangeCost(game: GameState, buyerId: number, branch: TechnologyBranch, level: number, compensation: Record<TradableResource, number>) {
+  const cost = technologyCost(game, buyerId, branch, level, true);
+  for (const resource of ["material", "currency", "research"] as const)
+    cost[resource] = (cost[resource] || 0) + compensation[resource];
+  return cost;
 }
 
 function payRecord(player: PlayerState, cost: Record<string, number>): void {
@@ -496,10 +626,15 @@ export function resolveProposal(
   game: GameState,
   proposalId: string,
   accept: boolean,
+  blockadeDestinationHexId?: string,
 ): { ok: boolean; message: string } {
   const proposal = game.proposals.find((item) => item.id === proposalId);
   if (!proposal || proposal.status !== "pending")
     return { ok: false, message: "That proposal is no longer pending." };
+  if (proposal.kind === "trade" && proposal.expiresAfterTurn !== undefined && proposal.expiresAfterTurn < game.turn) {
+    proposal.status = "cancelled";
+    return { ok: false, message: "That counteroffer expired at the end of its Turn." };
+  }
   if (!accept) {
     proposal.status = "rejected";
     game.log.unshift(
@@ -509,8 +644,16 @@ export function resolveProposal(
   }
 
   if (proposal.kind === "trade") {
-    const eligibility = tradeEligibility(game, proposal.from, proposal.to);
+    if (!validTradeBundle(proposal.offer) || !validTradeBundle(proposal.request))
+      return { ok: false, message: "Trade quantities must be non-negative whole numbers up to 99." };
+    const influenceEligibility = influenceTradeEligibility(game, proposal);
+    if (!influenceEligibility.ok) return influenceEligibility;
+    const assetEligibility = blockadeSaleEligibility(game, proposal);
+    if (!assetEligibility.ok) return assetEligibility;
+    const eligibility = proposal.blockadeId || proposal.blockadeCommission ? { ok: true, message: assetEligibility.message } : tradeEligibility(game, proposal.from, proposal.to);
     if (!eligibility.ok) return eligibility;
+    if ((proposal.blockadeId || proposal.blockadeCommission) && (!blockadeDestinationHexId || !legalBlockadeSaleDestinations(game, proposal.to).some((hex) => hex.id === blockadeDestinationHexId)))
+      return { ok: false, message: "Choose one of your controlled hexes for the purchased Blockade." };
     if (
       (proposal.offer.labor || proposal.request.labor) &&
       !hasBenefit(game, proposal.from, proposal.to, "trade")
@@ -521,14 +664,44 @@ export function resolveProposal(
       };
     if (
       !canProvide(game, proposal.from, proposal.offer) ||
-      !canProvide(game, proposal.to, proposal.request)
+      !canProvide(game, proposal.to, proposal.request) || proposal.blockadeCommission &&
+      !canPayRecord(game.players[proposal.to], blockadeCommissionTotal(proposal.request))
     )
       return {
         ok: false,
         message: "One party can no longer provide the proposed resources.",
       };
+    const sealed = game.orderProtocol.submissions.filter((submission) =>
+      submission.playerId === proposal.from || submission.playerId === proposal.to);
+    if (sealed.length) {
+      const preview = structuredClone(game);
+      transferBundle(preview, proposal.from, proposal.to, proposal.offer);
+      transferBundle(preview, proposal.to, proposal.from, proposal.request);
+      if (proposal.blockadeCommission) payRecord(preview.players[proposal.to], blockadeConstructionCost);
+      if (sealed.some((submission) => projectedOrderBudget(preview, submission.playerId, submission.orders).error))
+        return { ok: false, message: "This trade would consume resources committed to sealed Orders." };
+    }
     transferBundle(game, proposal.from, proposal.to, proposal.offer);
     transferBundle(game, proposal.to, proposal.from, proposal.request);
+    if (proposal.offer.influence) {
+      const metrics = game.players[proposal.from].legacyMetrics;
+      if (!(metrics.aurelianInfluenceTradePartners ||= []).includes(proposal.to)) metrics.aurelianInfluenceTradePartners.push(proposal.to);
+    }
+    if (proposal.request.influence) {
+      const metrics = game.players[proposal.to].legacyMetrics;
+      if (!(metrics.aurelianInfluenceTradePartners ||= []).includes(proposal.from)) metrics.aurelianInfluenceTradePartners.push(proposal.from);
+    }
+    if (proposal.blockadeCommission) {
+      payRecord(game.players[proposal.to], blockadeConstructionCost);
+      placeCommissionedBlockade(game, proposal.from, proposal.to, blockadeDestinationHexId!);
+      game.players[proposal.from].legacyMetrics.aegisPlatformTransfers.push(proposal.to);
+      game.players[proposal.to].legacyMetrics.aegisForeignBeneficiaries.push(proposal.from);
+    }
+    if (proposal.blockadeId) {
+      placeSoldBlockade(game, proposal.blockadeId, proposal.to, blockadeDestinationHexId!);
+      game.players[proposal.from].legacyMetrics.aegisPlatformTransfers.push(proposal.to);
+      game.players[proposal.to].legacyMetrics.aegisForeignBeneficiaries.push(proposal.from);
+    }
     const era = game.era - 1,
       from = game.players[proposal.from],
       to = game.players[proposal.to];
@@ -544,6 +717,13 @@ export function resolveProposal(
     if (!to.legacyMetrics.directTradePartners.includes(from.id)) to.legacyMetrics.directTradePartners.push(from.id);
     from.legacyMetrics.directTradeCount++;
     to.legacyMetrics.directTradeCount++;
+    if (!proposal.blockadeCommission && !proposal.blockadeId) {
+      if (activePolicy(game) === "open-markets" && !hasBenefit(game, from.id, to.id, "trade") && tradeEligibility(game, from.id, to.id).message.startsWith("Open Markets")) markPolicyUsed(game, from.id, "open-markets", "turn");
+      if (activePolicy(game) === "open-commerce") for (const party of [from, to]) if (!policyUsed(game, party.id, "open-commerce", "turn")) {
+        party.resources.currency++;
+        markPolicyUsed(game, party.id, "open-commerce", "turn");
+      }
+    }
     const ordinary = (bundle: TradeBundle) =>
       bundle.material + bundle.currency + bundle.research;
     from.legacyMetrics.receivedTradeValue[era] +=
@@ -585,10 +765,12 @@ export function resolveProposal(
     }
     establishContact(game, proposal.from, proposal.to);
     proposal.status = "accepted";
-    game.log.unshift(
-      `${game.players[proposal.from].name} and ${game.players[proposal.to].name} completed a direct trade.`,
-    );
-    return { ok: true, message: "Trade completed." };
+    game.log.unshift(proposal.blockadeCommission
+      ? `${game.players[proposal.to].name} commissioned an Aegis Blockade Platform from ${game.players[proposal.from].name} and deployed it at ${blockadeDestinationHexId}.`
+      : proposal.blockadeId
+      ? `${game.players[proposal.to].name} purchased an Aegis Blockade Platform from ${game.players[proposal.from].name} and deployed it at ${blockadeDestinationHexId}.`
+      : `${game.players[proposal.from].name} and ${game.players[proposal.to].name} completed a direct trade.`);
+    return { ok: true, message: proposal.blockadeCommission ? "Blockade commission completed." : proposal.blockadeId ? "Blockade sale completed." : "Trade completed." };
   }
 
   if (proposal.kind === "agreement") {
@@ -609,8 +791,23 @@ export function resolveProposal(
         ok: false,
         message: "One party no longer has enough Influence.",
       };
+    const sealed = game.orderProtocol.submissions.filter((submission) =>
+      submission.playerId === from.id || submission.playerId === to.id);
+    if (sealed.length) {
+      const preview = structuredClone(game);
+      for (const [party, partner, cost] of [[from, to, fromCost], [to, from, toCost]] as const) {
+        const bonus = factionRules(party) === "aurelians" && !party.diplomacy.firstAgreementPartners.includes(partner.id) ? 1 : 0;
+        preview.players[party.id].resources.influence -= cost - bonus;
+      }
+      if (sealed.some((submission) => projectedOrderBudget(preview, submission.playerId, submission.orders).error))
+        return { ok: false, message: "This agreement would consume Influence committed to sealed Orders." };
+    }
     from.resources.influence -= fromCost;
     to.resources.influence -= toCost;
+    if (activePolicy(game) === "cultural-funding") {
+      markPolicyUsed(game, from.id, "agreement");
+      markPolicyUsed(game, to.id, "agreement");
+    }
     if (proposal.agreementType === "trade") {
       if (
         factionRules(from) === "meridian" &&
@@ -673,7 +870,8 @@ export function resolveProposal(
     true,
   );
   const compensation = { ...proposal.compensation, labor: 0 } as TradeBundle;
-  if (!canPayRecord(buyer, cost) || !canProvide(game, buyer.id, compensation))
+  const combinedCost = technologyExchangeCost(game, buyer.id, proposal.branch, proposal.level, proposal.compensation);
+  if (!canPayRecord(buyer, combinedCost))
     return {
       ok: false,
       message: "The buyer cannot afford the Technology and compensation.",
@@ -749,6 +947,11 @@ export function processNewTurnDiplomacy(
   game: GameState,
   newTurn: number,
 ): void {
+  for (const proposal of game.proposals) {
+    if (proposal.kind === "trade" && proposal.status === "pending" &&
+        proposal.expiresAfterTurn !== undefined && proposal.expiresAfterTurn < newTurn)
+      proposal.status = "cancelled";
+  }
   game.agreements = game.agreements.filter(
     (agreement) =>
       agreement.endsAfterTurn === undefined ||

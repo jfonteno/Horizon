@@ -1,9 +1,14 @@
 import { getNeighbors } from "../engine/geometry";
 import { factionRules } from "../factions";
+import { factionLibrary } from "../factions";
 import { mapLibrary } from "../maps";
 import type { CarrierState, CarrierType, GameState, HexState, PlayerState } from "../types";
 import { hasAgreement, hasBenefit, hasStationingPermission } from "./diplomacy";
 import { canPay, spend } from "./economy";
+import { homeGuardStrength, recordGunForHire } from "./shattered-reach";
+import { destroyLoadedBlockades, syncLoadedBlockades } from "./blockades";
+import { portalNeighbors, removeCenterAt } from "./portals";
+import { activePolicy, markPolicyUsed, policyCost, policyUsed } from "./policy-deck";
 
 export type CarrierDefinition = {
   type: CarrierType;
@@ -12,7 +17,9 @@ export type CarrierDefinition = {
   move: number;
   capacity: number;
   cost: Record<string, number>;
-  faction?: "varkesh";
+  faction?: "varkesh" | "aegis" | "wayfarers" | "salvo";
+  intrinsicCS?: number;
+  bombard?: number;
   special: string;
 };
 
@@ -27,7 +34,20 @@ export const carrierLibrary: Record<CarrierType, CarrierDefinition> = {
   fleetTransport: { type: "fleetTransport", name: "Fleet Transport", tech: 4, move: 2, capacity: 14, cost: { material: 7, currency: 5, labor: 3 }, special: "Maximum standard capacity." },
   corvette: { type: "corvette", name: "Corvette", tech: 2, move: 3, capacity: 2, cost: { material: 1, currency: 1, labor: 1 }, faction: "varkesh", special: "Varkesh rapid-response vessel." },
   xebec: { type: "xebec", name: "Xebec", tech: 4, move: 3, capacity: 12, cost: { material: 7, currency: 6, labor: 3 }, faction: "varkesh", special: "Varkesh rapid force projection." },
+  blockadeTender: { type: "blockadeTender", name: "Blockade Deployment Vessel", tech: 2, move: 2, capacity: 2, cost: { material: 3, currency: 3, labor: 2 }, faction: "aegis", special: "Carries up to 3 Blockades. Other military vessels carry 1." },
+  bombardFrigate: { type: "bombardFrigate", name: "Bombard Frigate", tech: 2, move: 3, capacity: 2, cost: { material: 3, currency: 3, labor: 2 }, faction: "salvo", bombard: 1, special: "Bombardment 1. Movement 3 allows rapid deployment to a firing position." },
+  siegeCruiser: { type: "siegeCruiser", name: "Siege Cruiser", tech: 3, move: 1, capacity: 3, cost: { material: 5, currency: 4, labor: 2 }, faction: "salvo", bombard: 2, special: "Bombardment 2 when stationary." },
+  siegeTender: { type: "siegeTender", name: "Siege Tender", tech: 4, move: 1, capacity: 2, intrinsicCS: 5, cost: { material: 5, currency: 4, labor: 2 }, faction: "salvo", special: "5 CS. Once per Turn extends one supported Bombardment by 1 hex." },
+  gunneryPlatform: { type: "gunneryPlatform", name: "Gunnery Platform", tech: 3, move: 2, capacity: 2, intrinsicCS: 4, cost: { material: 4, currency: 3, labor: 2 }, faction: "wayfarers", special: "4 CS, rising to 6 CS while defending a Wayfarer mobile Habitat." },
 };
+
+export function militaryMovementBonus(level: number) {
+  return level >= 4 ? 4 : level >= 3 ? 2 : level >= 2 ? 1 : 0;
+}
+
+export function carrierMovement(game: GameState, carrier: CarrierState) {
+  return carrierLibrary[carrier.type].move + militaryMovementBonus(game.players[carrier.owner].tech.Military);
+}
 
 const standardTypes: CarrierType[] = ["patrol", "transport", "frigate", "assault", "cruiser", "heavyTransport", "battleship", "fleetTransport"];
 
@@ -42,11 +62,16 @@ export function availableCarrierTypes(player: PlayerState): CarrierType[] {
   const available = standardTypes.filter(type => carrierLibrary[type].tech <= player.tech.Military);
   if (factionRules(player) === "varkesh" && player.tech.Military >= 2) available.push("corvette");
   if (factionRules(player) === "varkesh" && player.tech.Military >= 4) available.push("xebec");
+  if (factionRules(player) === "aegis" && player.tech.Military >= 2) available.push("blockadeTender");
+  if (factionRules(player) === "wayfarers" && player.tech.Military >= 3) available.push("gunneryPlatform");
+  if (factionRules(player) === "salvo" && player.tech.Military >= 2) available.push("bombardFrigate");
+  if (factionRules(player) === "salvo" && player.tech.Military >= 3) available.push("siegeCruiser");
+  if (factionRules(player) === "salvo" && player.tech.Military >= 4) available.push("siegeTender");
   return available;
 }
 
 export function constructionAvailable(hex: HexState, turn: number): boolean {
-  return hex.constructionUsedTurn !== turn;
+  return !!hex.tier && turn > 0;
 }
 
 function claimConstruction(hex: HexState, turn: number): boolean {
@@ -66,10 +91,11 @@ export function buildCarrier(game: GameState, playerId: number, habitatId: strin
   if (!habitat?.tier || habitat.owner !== playerId) return { ok: false, message: "Select one of your Habitats." };
   if (!availableCarrierTypes(player).includes(type)) return { ok: false, message: "Your Military Technology does not unlock that vessel." };
   if (!constructionAvailable(habitat, game.turn)) return { ok: false, message: "That Habitat already used its Construction Order this Turn." };
-  const cost = carrierCost(player, type);
+  const cost = policyCost(game, playerId, "carrier", carrierCost(player, type));
   if (!canPay(player, cost)) return { ok: false, message: "You cannot afford that vessel." };
   claimConstruction(habitat, game.turn);
   spend(player, cost);
+  if (activePolicy(game) === "arms-expansion") markPolicyUsed(game, playerId, "carrier");
   game.carriers.push({ id: uniqueCarrierId(game, playerId), owner: playerId, type, hex: habitatId, cu: 0, readyTurn: game.turn + 1, movesRemaining: 0 });
   player.legacyMetrics.builtVessels[game.era - 1]++;
   game.log.unshift(`${player.name} began construction of a ${carrierLibrary[type].name} at ${habitatId}. It becomes available next Turn and must be crewed with at least 1 CU.`);
@@ -81,15 +107,17 @@ export function recruitCombatUnits(game: GameState, playerId: number, habitatId:
   if (!habitat?.tier || habitat.owner !== playerId) return { ok: false, message: "Select one of your Habitats." };
   if (!Number.isInteger(pairs) || pairs < 1) return { ok: false, message: "Recruit at least one pair of Combat Units." };
   if (!constructionAvailable(habitat, game.turn)) return { ok: false, message: "That Habitat already used its Construction Order this Turn." };
-  const cost = { currency: pairs, labor: pairs };
+  const cost = policyCost(game, playerId, "recruit", { currency: pairs, labor: pairs });
   if (!canPay(player, cost)) return { ok: false, message: "You cannot afford that recruitment order." };
   claimConstruction(habitat, game.turn);
   spend(player, cost);
   habitat.pendingCombat ||= [];
-  habitat.pendingCombat.push({ amount: pairs * 2, readyTurn: game.turn + 1 });
-  player.legacyMetrics.recruitedCU[game.era - 1] += pairs * 2;
-  game.log.unshift(`${player.name} recruited ${pairs * 2} CU at ${habitatId}; they become available next Turn.`);
-  return { ok: true, message: `${pairs * 2} Combat Units recruited for next Turn.` };
+  const amount = pairs * 2 + Number(activePolicy(game) === "strategic-mobilization" && !policyUsed(game, playerId, "recruit", "turn"));
+  if (amount > pairs * 2) markPolicyUsed(game, playerId, "recruit", "turn");
+  habitat.pendingCombat.push({ amount, readyTurn: game.turn + 1 });
+  player.legacyMetrics.recruitedCU[game.era - 1] += amount;
+  game.log.unshift(`${player.name} recruited ${amount} CU at ${habitatId}; they become available next Turn.`);
+  return { ok: true, message: `${amount} Combat Units recruited for next Turn.` };
 }
 
 export function claimHabitatConstruction(game: GameState, habitatId: string): boolean {
@@ -110,11 +138,9 @@ export function beginFleetTurn(game: GameState, playerId: number): void {
       const habitat = game.hexes.find(hex => hex.id === carrier.hex && hex.owner === playerId && hex.combat > 0);
       if (habitat) { habitat.combat--; carrier.cu = 1; }
     }
-    carrier.movesRemaining = carrier.readyTurn <= game.turn && carrier.cu > 0 ? definition.move : 0;
+    carrier.movesRemaining = carrier.readyTurn <= game.turn && carrier.cu > 0 ? carrierMovement(game, carrier) : 0;
   });
-  const destroyed = game.carriers.filter(carrier => carrier.owner === playerId && carrier.readyTurn <= game.turn && carrier.cu === 0);
-  destroyed.forEach(carrier => game.log.unshift(`${game.players[playerId].name}'s uncrewed ${carrierLibrary[carrier.type].name} was destroyed when it activated without a CU.`));
-  game.carriers = game.carriers.filter(carrier => carrier.readyTurn > game.turn || carrier.cu > 0);
+  // Newly built hulls remain docked until the player can provide a crew.
   game.selectedCarrierIds = game.carriers.filter(carrier => carrier.owner === playerId && carrier.readyTurn <= game.turn).slice(0, 1).map(carrier => carrier.id);
 }
 
@@ -128,7 +154,9 @@ export function transferCombatUnit(game: GameState, playerId: number, carrierId:
   if (direction === "load") {
     const moved = Math.min(count, habitat.combat, definition.capacity - carrier.cu);
     if (!moved) return { ok: false, message: "No stationed CU or carrier capacity is available." };
+    const wasUncrewed = carrier.cu === 0;
     habitat.combat -= moved; carrier.cu += moved;
+    if (wasUncrewed && carrier.readyTurn <= game.turn) carrier.movesRemaining = carrierMovement(game, carrier);
     return { ok: true, message: `${moved} CU loaded onto ${definition.name}.` };
   }
   const moved = Math.min(count, Math.max(0, carrier.cu - 1));
@@ -141,6 +169,7 @@ function trimCarriers(game: GameState, carriers: CarrierState[], survivors: numb
   const ordered = [...carriers].sort((a, b) => carrierLibrary[b.type].capacity - carrierLibrary[a.type].capacity || a.id.localeCompare(b.id));
   const kept = ordered.slice(0, Math.min(ordered.length, survivors));
   const keepIds = new Set(kept.map(carrier => carrier.id));
+  destroyLoadedBlockades(game, carriers.filter((carrier) => !keepIds.has(carrier.id)).map((carrier) => carrier.id));
   game.carriers = game.carriers.filter(carrier => !carriers.some(candidate => candidate.id === carrier.id) || keepIds.has(carrier.id));
   kept.forEach(carrier => { carrier.cu = 1; });
   let extra = survivors - kept.length;
@@ -162,17 +191,34 @@ function defenderCasualties(game: GameState, hostileCarriers: CarrierState[], ha
 }
 
 function tierSlots(tier: HexState["tier"]): number {
-  return tier === "Metropolis" ? 3 : tier === "Colony" ? 2 : tier === "Outpost" ? 1 : 0;
+  return tier === "Arcology" ? 4 : tier === "Metropolis" ? 3 : tier === "Colony" ? 2 : tier === "Outpost" ? 1 : 0;
 }
 
 function captureHabitat(game: GameState, habitat: HexState, attackerId: number): void {
   const attacker = game.players[attackerId], oldOwner = habitat.owner!;
   const capturedTier = habitat.tier;
+  const priorEnhanced = habitat.enhancedCenterIndices?.length || 0;
+  if (priorEnhanced) {
+    const defender = game.players[oldOwner];
+    defender.laborPenalty = Math.max(0, (defender.laborPenalty || 0) - priorEnhanced);
+    defender.laborCap += priorEnhanced;
+    defender.labor = Math.min(defender.laborCap, defender.labor + priorEnhanced);
+  }
   habitat.owner = attackerId;
+  if (habitat.kind === "home") habitat.portalDestinations = [];
+  if (!(habitat.captureRewardedTo || []).includes(attackerId)) {
+    const resource = habitat.kind === "home" ? game.players[oldOwner].lastHomeProduction || factionLibrary[game.players[oldOwner].faction].homeProduction : habitat.kind;
+    if (resource === "material" || resource === "currency" || resource === "research" || resource === "influence") {
+      attacker.resources[resource]++;
+      habitat.captureRewardedTo = [...(habitat.captureRewardedTo || []), attackerId];
+      game.log.unshift(`${attacker.name} seized 1 ${resource} at ${habitat.id}.`);
+    }
+  }
   habitat.combat = 0;
   habitat.pendingCombat = [];
   if (factionRules(attacker) !== "varkesh") habitat.tier = habitat.tier === "Metropolis" ? "Colony" : habitat.tier === "Colony" ? "Outpost" : habitat.tier;
   const excess = Math.max(0, habitat.centers.length - tierSlots(habitat.tier));
+  habitat.enhancedCenterIndices = [];
   if (excess) game.pendingCenterLoss = { hexId: habitat.id, playerId: attackerId, removeCount: excess };
   attacker.legacyMetrics.habitatsCaptured[game.era - 1]++;
   if (capturedTier === "Metropolis") attacker.legacyMetrics.metropolisCaptured[game.era - 1]++;
@@ -185,7 +231,7 @@ export function removeCapturedCenter(game: GameState, playerId: number, centerIn
   if (!pending || pending.playerId !== playerId) return { ok: false, message: "No captured Center decision is pending." };
   const habitat = game.hexes.find(hex => hex.id === pending.hexId);
   if (!habitat || centerIndex < 0 || centerIndex >= habitat.centers.length) return { ok: false, message: "That Center is unavailable." };
-  const [removed] = habitat.centers.splice(centerIndex, 1);
+  const removed = removeCenterAt(habitat, centerIndex, game.players[playerId]);
   pending.removeCount--;
   game.log.unshift(`${game.players[playerId].name} destroyed the excess ${removed === "defense" ? "Defense Grid" : `${removed} Center`} at ${habitat.id}.`);
   if (pending.removeCount <= 0) game.pendingCenterLoss = undefined;
@@ -219,6 +265,13 @@ function carrierForce(game: GameState, ids: string[]) {
   return game.carriers.filter((carrier) => ids.includes(carrier.id));
 }
 
+function carrierCombatStrength(game: GameState, carrier: CarrierState, defending = false) {
+  const definition = carrierLibrary[carrier.type];
+  let intrinsic = definition.intrinsicCS || 0;
+  if (defending && carrier.type === "gunneryPlatform" && game.mobileHabitats.some((mobile) => mobile.owner === carrier.owner && mobile.hex === carrier.hex)) intrinsic = 6;
+  return carrier.cu + intrinsic;
+}
+
 function hostile(game: GameState, a: number, b: number, habitatOwner?: number) {
   return (
     a !== b &&
@@ -231,12 +284,23 @@ function hostile(game: GameState, a: number, b: number, habitatOwner?: number) {
   );
 }
 
+function engagementPolicy(game: GameState, initiator: number) {
+  if (activePolicy(game) !== "rules-of-engagement" || policyUsed(game, initiator, "combat", "turn")) return;
+  markPolicyUsed(game, initiator, "combat", "turn");
+  const player = game.players[initiator];
+  if (player.resources.influence > 0) player.resources.influence--;
+  game.log.unshift(`${player.name} initiated hostile combat under Rules of Engagement and lost 1 Influence if available.`);
+}
+
 function removeForce(game: GameState, force: CarrierState[]) {
   const ids = new Set(force.map((carrier) => carrier.id));
+  destroyLoadedBlockades(game, ids);
   game.carriers = game.carriers.filter((carrier) => !ids.has(carrier.id));
 }
 
 function destroyUnguardedCivilianVessels(game: GameState, hexId: string) {
+  // Colony Ships are noncombatants and deliberately excluded. Future Corsair
+  // boarding must use its own faction capability, never ordinary combat.
   const militaryOwners = new Set(game.carriers.filter((carrier) => carrier.hex === hexId && carrier.cu > 0).map((carrier) => carrier.owner));
   const threatened = (owner: number) => [...militaryOwners].some((militaryOwner) => hostile(game, owner, militaryOwner));
   const destroyed = game.civilianUnits.filter((unit) => unit.hex === hexId && threatened(unit.owner));
@@ -251,10 +315,6 @@ function destroyUnguardedCivilianVessels(game: GameState, hexId: string) {
       player.explorationVessels = player.explorationVessels.filter((unit) => unit.hex !== hexId);
       game.log.unshift(`${player.name}'s unescorted Exploration vessel${explorers.length === 1 ? " was" : "s were"} destroyed at ${hexId}.`);
       player.explorer = player.explorationVessels[0]?.hex || "";
-    }
-    if (player.colonyShip === hexId) {
-      player.colonyShip = "";
-      game.log.unshift(`${player.name}'s unescorted Colony Ship was destroyed at ${hexId}.`);
     }
   }
 }
@@ -298,8 +358,8 @@ function resolveEdgePair(
 ) {
   const a = carrierForce(game, first.carrierIds),
     b = carrierForce(game, second.carrierIds),
-    aCS = a.reduce((sum, carrier) => sum + carrier.cu, 0),
-    bCS = b.reduce((sum, carrier) => sum + carrier.cu, 0);
+    aCS = a.reduce((sum, carrier) => sum + carrierCombatStrength(game, carrier), 0),
+    bCS = b.reduce((sum, carrier) => sum + carrierCombatStrength(game, carrier), 0);
   if (aCS === bCS) {
     removeForce(game, [...a, ...b]);
     game.log.unshift(
@@ -315,6 +375,7 @@ function resolveEdgePair(
   removeForce(game, loser);
   trimCarriers(game, winner, survivors);
   carrierForce(game, winningMove.carrierIds).forEach((carrier) => {
+    carrier.lastHex = carrier.hex;
     carrier.hex = winningMove.destination;
     carrier.movesRemaining--;
   });
@@ -328,6 +389,13 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
   const carriers = game.carriers.filter((carrier) => carrier.hex === destination),
     habitat = game.hexes.find((hex) => hex.id === destination && hex.tier),
     owners = new Set(carriers.map((carrier) => carrier.owner));
+  const hostileBlockades = game.blockades.filter((blockade) =>
+    blockade.hex === destination &&
+    blockade.active &&
+    carriers.some((carrier) => carrier.owner !== blockade.owner && !hasBenefit(game, carrier.owner, blockade.owner, "openBorders")),
+  );
+  hostileBlockades.forEach((blockade) => owners.add(blockade.owner));
+  game.mobileHabitats.filter((mobile) => mobile.hex === destination && mobile.deployed).forEach((mobile) => owners.add(mobile.owner));
   if (habitat?.owner !== undefined) owners.add(habitat.owner);
   const involved = [...owners];
   if (
@@ -349,20 +417,15 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
         )
           ? 1
           : 0,
-      guard =
-        habitat?.owner === owner
-          ? Math.max(
-              0,
-              (habitat.centers.includes("defense") ? 3 : 1) -
-                assaultReduction,
-            )
-          : 0;
+      guard = habitat?.owner === owner ? Math.max(0, homeGuardStrength(game, habitat) - assaultReduction) : 0,
+      blockadeCS = hostileBlockades.filter((blockade) => blockade.owner === owner).length * 4,
+      caravanCS = game.mobileHabitats.filter((mobile) => mobile.hex === destination && mobile.owner === owner && mobile.deployed).reduce((sum, mobile) => sum + mobile.caravanGuards * 3, 0);
     return {
       owner,
       fleet,
       unitCS: fleet.reduce((sum, carrier) => sum + carrier.cu, 0) + stationed,
       totalCS:
-        fleet.reduce((sum, carrier) => sum + carrier.cu, 0) + stationed + guard,
+        fleet.reduce((sum, carrier) => sum + carrierCombatStrength(game, carrier, true), 0) + stationed + guard + blockadeCS + caravanCS,
     };
   });
 
@@ -409,12 +472,19 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
   const coalitionsHostile = (a: typeof coalitionForces[number], b: typeof coalitionForces[number]) =>
     a.owners.some((ownerA) => b.owners.some((ownerB) => hostile(game, ownerA, ownerB, habitat?.owner)));
   const participating = coalitionForces.filter((coalition) => coalitionForces.some((other) => other.id !== coalition.id && coalitionsHostile(coalition, other)));
+  const blockadeOnlyBattle = participating.some((coalition) =>
+    coalition.unitCS === 0 &&
+    coalition.totalCS > 0 &&
+    coalition.owners.every((owner) => hostileBlockades.some((blockade) => blockade.owner === owner)),
+  );
   const strongest = [...participating].sort((a, b) => b.totalCS - a.totalCS || a.id - b.id)[0];
   const oppositionCoalitions = participating.filter((coalition) => coalition.id !== strongest.id && coalitionsHostile(strongest, coalition));
   const opposition = oppositionCoalitions.reduce((sum, coalition) => sum + coalition.totalCS, 0);
   const tiedStrongest = oppositionCoalitions.some((coalition) => coalition.totalCS === strongest.totalCS);
   if (tiedStrongest || strongest.totalCS <= opposition) {
     removeForce(game, participating.flatMap((coalition) => coalition.fleet));
+    game.blockades.filter((blockade) => blockade.hex === destination && participating.some((coalition) => coalition.owners.includes(blockade.owner))).forEach((blockade) => { blockade.active = false; });
+    game.mobileHabitats.filter((mobile) => mobile.hex === destination && participating.some((coalition) => coalition.owners.includes(mobile.owner))).forEach((mobile) => { mobile.caravanGuards = 0; });
     if (habitat?.owner !== undefined && participating.some((coalition) => coalition.owners.includes(habitat.owner!))) habitat.combat = 0;
     game.log.unshift(
       `Coalition combat at ${destination} ended in mutual destruction.`,
@@ -424,8 +494,14 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
 
   const survivingUnits = Math.max(1, strongest.unitCS - opposition);
   for (const coalition of oppositionCoalitions) removeForce(game, coalition.fleet);
+  const defeatedOwners = new Set(oppositionCoalitions.flatMap((coalition) => coalition.owners));
+  game.blockades.filter((blockade) => blockade.hex === destination && defeatedOwners.has(blockade.owner)).forEach((blockade) => { blockade.active = false; });
+  game.mobileHabitats.filter((mobile) => mobile.hex === destination && defeatedOwners.has(mobile.owner)).forEach((mobile) => { mobile.caravanGuards = 0; });
   const habitatHeld = habitat?.owner !== undefined && strongest.owners.includes(habitat.owner);
   if (habitat && habitatHeld) {
+    const defender = game.players[habitat.owner!];
+    defender.legacyMetrics.defendedHabitats ||= [];
+    if (!defender.legacyMetrics.defendedHabitats.includes(habitat.id)) defender.legacyMetrics.defendedHabitats.push(habitat.id);
     habitat.combat = Math.min(habitat.combat, survivingUnits);
     trimCarriers(game, strongest.fleet, Math.max(0, survivingUnits - habitat.combat));
   } else {
@@ -438,11 +514,27 @@ function resolveSimultaneousHex(game: GameState, destination: string) {
     }
   }
   const defeated = oppositionCoalitions.flatMap((coalition) => coalition.owners);
-  strongest.owners.forEach((owner) => awardVarkesh(game, owner, defeated));
+  recordGunForHire(game, destination, defeated, strongest.owners);
+  if (!blockadeOnlyBattle) strongest.owners.forEach((owner) => awardVarkesh(game, owner, defeated));
   const winners = strongest.owners.map((owner) => game.players[owner].name).join(" and ");
   game.log.unshift(
     `${winners} won coalition combat at ${destination}, ${strongest.totalCS} CS to ${opposition} combined opposition CS.`,
   );
+}
+
+/** Resolve military forces already occupying a Habitat that was established later in the same Turn. */
+export function resolveNewHabitatOccupation(game: GameState, hexId: string) {
+  const habitat = game.hexes.find((hex) => hex.id === hexId && hex.tier && hex.owner !== undefined);
+  if (!habitat) return;
+  const hostileForce = game.carriers.some(
+    (carrier) => carrier.hex === hexId && carrier.cu > 0 &&
+      !hasBenefit(game, habitat.owner!, carrier.owner, "nonAggression") &&
+      !hasBenefit(game, habitat.owner!, carrier.owner, "openBorders") &&
+      hostile(game, habitat.owner!, carrier.owner, habitat.owner),
+  );
+  if (!hostileForce) return;
+  resolveSimultaneousHex(game, hexId);
+  queueCombatRedistribution(game, hexId);
 }
 
 function resolveCarrierMoveStep(
@@ -471,7 +563,7 @@ function resolveCarrierMoveStep(
           carrier.cu < 1 ||
           used.has(carrier.id),
       ) ||
-      !getNeighbors(origin, map).includes(order.destination) ||
+      !(getNeighbors(origin, map).includes(order.destination) || (portalNeighbors(game, order.playerId, origin).includes(order.destination) && force.every((carrier) => carrier.portalUsedTurn !== game.turn))) ||
       game.hexes.find((hex) => hex.id === order.destination)?.revealed !== true ||
       game.hexes.find((hex) => hex.id === order.destination)?.kind === "rift"
     ) {
@@ -480,7 +572,10 @@ function resolveCarrierMoveStep(
       );
       continue;
     }
-    force.forEach((carrier) => used.add(carrier.id));
+    force.forEach((carrier) => {
+      used.add(carrier.id);
+      if (!getNeighbors(origin, map).includes(order.destination)) carrier.portalUsedTurn = game.turn;
+    });
     moves.push({ ...order, origin });
   }
 
@@ -495,6 +590,8 @@ function resolveCarrierMoveStep(
         hostile(game, moves[i].playerId, moves[j].playerId)
       ) {
         resolveEdgePair(game, moves[i], moves[j]);
+        engagementPolicy(game, moves[i].playerId);
+        engagementPolicy(game, moves[j].playerId);
         edgeResolved.add(i);
         edgeResolved.add(j);
       }
@@ -502,10 +599,12 @@ function resolveCarrierMoveStep(
   moves.forEach((move, index) => {
     if (edgeResolved.has(index)) return;
     carrierForce(game, move.carrierIds).forEach((carrier) => {
+      carrier.lastHex = carrier.hex;
       carrier.hex = move.destination;
       carrier.movesRemaining--;
     });
   });
+  syncLoadedBlockades(game);
   const destinations = new Set(moves.map((move) => move.destination));
   const combatDestinations = new Set([...destinations].filter((destination) => {
     const habitat = game.hexes.find((hex) => hex.id === destination && hex.tier);
@@ -516,10 +615,12 @@ function resolveCarrierMoveStep(
   destinations.forEach((destination) =>
     resolveSimultaneousHex(game, destination),
   );
+  for (const move of moves) if (combatDestinations.has(move.destination)) engagementPolicy(game, move.playerId);
   destinations.forEach((destination) =>
     destroyUnguardedCivilianVessels(game, destination),
   );
   combatDestinations.forEach((destination) => queueCombatRedistribution(game, destination));
+  syncLoadedBlockades(game);
   game.selectedCarrierIds = game.selectedCarrierIds.filter((id) =>
     game.carriers.some((carrier) => carrier.id === id),
   );
@@ -552,28 +653,33 @@ function resolveCombat(game: GameState, attackerId: number, destination: string)
   if (habitat?.owner !== undefined)
     game.carriers.filter(carrier => carrier.hex === destination && carrier.owner !== attackerId && hasBenefit(game, habitat.owner!, carrier.owner, "defensive")).forEach(carrier => defendingOwners.add(carrier.owner));
   const hostileCarriers = game.carriers.filter(carrier => carrier.hex === destination && defendingOwners.has(carrier.owner));
-  const attackCS = attackers.reduce((sum, carrier) => sum + carrier.cu, 0);
+  const attackCS = attackers.reduce((sum, carrier) => sum + carrierCombatStrength(game, carrier), 0);
   const defendingCU = hostileCarriers.reduce((sum, carrier) => sum + carrier.cu, 0) + (habitat?.combat || 0);
   const assaultReduction = habitat && attackers.some(carrier => carrier.type === "assault") ? 1 : 0;
-  const homeGuard = habitat ? Math.max(0, (habitat.centers.includes("defense") ? 3 : 1) - assaultReduction) : 0;
+  const homeGuard = habitat ? Math.max(0, homeGuardStrength(game, habitat) - assaultReduction) : 0;
   const defenseCS = defendingCU + homeGuard;
   const opponentIds = [...defendingOwners];
   if (attackCS > defenseCS) {
     trimCarriers(game, attackers, attackCS - defenseCS);
+    destroyLoadedBlockades(game, hostileCarriers.map((carrier) => carrier.id));
     game.carriers = game.carriers.filter(carrier => !hostileCarriers.some(hostile => hostile.id === carrier.id));
     if (habitat) captureHabitat(game, habitat, attackerId);
+    recordGunForHire(game, destination, opponentIds, [attackerId]);
     awardVarkesh(game, attackerId, opponentIds);
     game.log.unshift(`${game.players[attackerId].name} won fleet combat at ${destination}, ${attackCS} CS to ${defenseCS} CS.`);
     return;
   }
+  destroyLoadedBlockades(game, attackers.map((carrier) => carrier.id));
   game.carriers = game.carriers.filter(carrier => !attackers.some(attacker => attacker.id === carrier.id));
   if (attackCS === defenseCS) {
     if (habitat) habitat.combat = 0;
+    destroyLoadedBlockades(game, hostileCarriers.map((carrier) => carrier.id));
     game.carriers = game.carriers.filter(carrier => !hostileCarriers.some(hostile => hostile.id === carrier.id));
     game.log.unshift(`Fleet combat at ${destination} ended in mutual destruction at ${attackCS} CS each.`);
     return;
   }
   defenderCasualties(game, hostileCarriers, habitat, attackCS);
+  recordGunForHire(game, destination, [attackerId], opponentIds);
   opponentIds.forEach(owner => awardVarkesh(game, owner, [attackerId]));
   game.log.unshift(`${game.players[attackerId].name} lost fleet combat at ${destination}, ${attackCS} CS to ${defenseCS} CS.`);
 }
@@ -584,7 +690,9 @@ export function moveCarriers(game: GameState, playerId: number, carrierIds: stri
   const origin = carriers[0].hex;
   if (carriers.some(carrier => carrier.hex !== origin)) return { ok: false, message: "A task force must begin in one hex." };
   if (carriers.some(carrier => carrier.readyTurn > game.turn || carrier.movesRemaining < 1 || carrier.cu < 1)) return { ok: false, message: "Every selected carrier must be ready, crewed, and have movement remaining." };
-  if (!getNeighbors(origin, mapLibrary[game.mapId]).includes(destination)) return { ok: false, message: "Task forces move one adjacent hex at a time." };
+  const portalStep = !getNeighbors(origin, mapLibrary[game.mapId]).includes(destination) && portalNeighbors(game, playerId, origin).includes(destination);
+  if (portalStep && carriers.some((carrier) => carrier.portalUsedTurn === game.turn)) return { ok: false, message: "A vessel may traverse one portal per Turn." };
+  if (!(getNeighbors(origin, mapLibrary[game.mapId]).includes(destination) || portalStep)) return { ok: false, message: "Task forces move one adjacent hex or use an owned portal." };
   const target = game.hexes.find(hex => hex.id === destination);
   if (!target || target.kind === "rift" || !target.revealed) return { ok: false, message: "Military carriers cannot enter that hex." };
   const encounteredOwners = new Set<number>();
@@ -595,13 +703,18 @@ export function moveCarriers(game: GameState, playerId: number, carrierIds: stri
     const peacefulFleetPresence = hasBenefit(game, playerId, owner, "defensive");
     if (!peacefulHabitatPassage && !peacefulFleetPresence && hasBenefit(game, playerId, owner, "nonAggression")) return { ok: false, message: `Your agreement with ${game.players[owner].name} blocks hostile movement.` };
   }
-  if ([...encounteredOwners].some(owner => {
+  const hostileEntry = [...encounteredOwners].some(owner => {
     const peacefulHabitatPassage = target.owner === owner && hasBenefit(game, playerId, owner, "openBorders");
     const peacefulFleetPresence = hasBenefit(game, playerId, owner, "defensive");
     return !peacefulHabitatPassage && !peacefulFleetPresence;
-  })) game.players[playerId].legacyMetrics.combatInitiated[game.era - 1]++;
-  carriers.forEach(carrier => { carrier.hex = destination; carrier.movesRemaining--; });
+  });
+  if (hostileEntry) game.players[playerId].legacyMetrics.combatInitiated[game.era - 1]++;
+  carriers.forEach(carrier => { carrier.lastHex = carrier.hex; carrier.hex = destination; carrier.movesRemaining--; });
+  if (portalStep) carriers.forEach((carrier) => { carrier.portalUsedTurn = game.turn; });
+  syncLoadedBlockades(game);
   resolveCombat(game, playerId, destination);
+  if (hostileEntry) engagementPolicy(game, playerId);
+  syncLoadedBlockades(game);
   game.selected = destination;
   game.selectedCarrierIds = game.selectedCarrierIds.filter(id => game.carriers.some(carrier => carrier.id === id));
   return { ok: true, message: `Task force moved to ${destination}.` };

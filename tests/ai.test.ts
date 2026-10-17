@@ -42,6 +42,7 @@ test("Aurelian faction doctrine converts Political Capital to meet an immediate 
   const aurelian = game.players.find((player) => player.faction === "aurelians")!;
   game.orderProtocol.currentPlayer = aurelian.id;
   game.active = aurelian.id;
+  game.hexes.find((hex) => hex.owner === aurelian.id && hex.tier)!.constructionUsedTurn = game.turn;
   aurelian.resources = { material: 0, currency: 0, research: 0, influence: 4 };
   const result = takeBotTurn(game, aurelian.id, profile);
   assert.equal(result.ok, true);
@@ -112,26 +113,39 @@ test("a six-faction spectator simulation records the complete 16-Turn cycle", ()
   assert.equal(game.botMemory.length, 6);
   assert.equal(game.botMemory.every((memory) => memory.opponents.every((opponent) => opponent.archetypes.length > 0)), true);
   assert.ok(game.botReports.some((report) => report.opponentModels.length > 0));
-  assert.ok(game.botReports.every((report) => report.strategicForecast.length === 4));
+  assert.ok(game.botReports.every((report) => report.strategicForecast.length >= 6));
   game.players.forEach((player) => {
     for (const era of [1, 2, 3, 4]) assert.ok(player.hiddenLegacy[era]?.selected);
   });
 });
 
-test("five-seed strategic regression maintains Gate pace and completes at least one Gate", () => {
-  let totalGate = 0, successes = 0;
+test("five-seed strategic regression maintains Gate survival and Legacy scoring", (context) => {
+  let totalGate = 0, successes = 0, hiddenCompleted = 0, civilizationClaims = 0, universalClaims = 0;
   for (let seed = 21000; seed < 21005; seed++) {
     const game = createGame(6, [...allFactions], "shattered-reach", "horizon-base", seed, allBots, true);
     let guard = 0;
     while (!game.result && guard++ < 140) {
-      if (game.orderProtocol.phase === "orders") assert.equal(takeBotTurn(game, game.orderProtocol.currentPlayer, profile).ok, true);
+      if (game.orderProtocol.phase === "orders") {
+        const action = takeBotTurn(game, game.orderProtocol.currentPlayer, profile);
+        assert.equal(action.ok, true);
+        assert.ok("report" in action && action.report.submissionOk, "Every planned bundle must submit without an empty-order recovery");
+      }
       else if (game.orderProtocol.phase === "ready") assert.equal(resolveSecretOrders(game).ok, true);
       else assert.fail(`Unexpected phase ${game.orderProtocol.phase}`);
     }
     assert.ok(game.result);
     totalGate += game.gate;
     if (game.result.gateSucceeded) successes++;
+    hiddenCompleted += game.players.reduce((sum, player) => sum + Object.values(player.hiddenLegacy).filter((hidden) => hidden.completed).length, 0);
+    civilizationClaims += game.players.reduce((sum, player) => sum + player.civilizationClaims.length, 0);
+    universalClaims += game.universalClaims.length;
   }
-  assert.ok(totalGate / 5 >= 12, `Expected average Gate progress of at least 12, received ${totalGate / 5}`);
-  assert.ok(successes >= 1, "Expected at least one completed Gate across the deterministic regression set");
+  context.diagnostic(JSON.stringify({ gateSuccesses: successes, averageGate: totalGate / 5,
+    hiddenCompletion: hiddenCompleted / 120, civilizationClaimsPerPlayer: civilizationClaims / 30,
+    universalClaimsPerGame: universalClaims / 5 }));
+  assert.ok(totalGate / 5 >= 17, `Expected average Gate progress of at least 17, received ${totalGate / 5}`);
+  assert.ok(successes >= 4, "Expected at least four completed Gates across five deterministic games");
+  assert.ok(hiddenCompleted / 120 >= .3, "Hidden completion must remain at or above the measured regression floor");
+  assert.ok(civilizationClaims / 30 >= .5, "Civilization scoring must remain active across the regression set");
+  assert.ok(universalClaims / 5 >= 2, "Bots must compete for multiple Universal objectives per game");
 });

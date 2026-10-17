@@ -1,9 +1,96 @@
-import type { GameState, PlayerController } from "../types";
+import type { GameState, PlayerController, SecretOrder } from "../types";
+import type { ExpansionId } from "../entitlements";
 
 export type RoomRole = "host" | "player" | "spectator";
 export type RoomStatus = "lobby" | "active" | "paused" | "complete";
+export type RoomPhase = "lobby" | "paused" | "negotiation" | "orders" | "resolving" | "mandatory-decision" | "complete";
+
+export type RoomAttention = {
+  id: string;
+  kind: "ready" | "hidden" | "proposal" | "message" | "orders" | "capture" | "redistribution" | "timer";
+  title: string;
+  detail: string;
+  turn: number;
+};
 
 export type RoomMode = "local" | "network";
+
+export type ChatChannelKind = "all" | "direct" | "group" | "system";
+
+export type ChatAttachment =
+  | { kind: "proposal"; proposalId: string }
+  | { kind: "hex"; hexId: string };
+
+export type RoomChatChannel = {
+  id: string;
+  kind: ChatChannelKind;
+  name: string;
+  participantIds: number[];
+  createdBy?: number;
+  createdAt: string;
+  mutedBy: number[];
+};
+
+export type RoomChatMessage = {
+  id: string;
+  sequence: number;
+  channelId: string;
+  senderId?: number;
+  senderKind: "human" | "bot" | "system";
+  text: string;
+  at: string;
+  era: number;
+  turn: number;
+  attachment?: ChatAttachment;
+};
+
+export type RoomChatReport = {
+  id: string;
+  messageId: string;
+  reporterId: number;
+  reason: string;
+  at: string;
+  status: "open" | "reviewed";
+};
+
+export type RoomChatState = {
+  channels: RoomChatChannel[];
+  messages: RoomChatMessage[];
+  reads: Record<string, Record<string, number>>;
+  blocks: Array<{ blockerId: number; blockedId: number }>;
+  reports: RoomChatReport[];
+  nextSequence: number;
+};
+
+export type RoomChatSession = {
+  channels: RoomChatChannel[];
+  messages: RoomChatMessage[];
+  unreadByChannel: Record<string, number>;
+  blockedPlayerIds: number[];
+};
+
+export type RoomModerationItem = RoomChatReport & {
+  message?: RoomChatMessage;
+  context: RoomChatMessage[];
+};
+
+export type RoomGatePledge = {
+  playerId: number;
+  era: number;
+  amount: number;
+  updatedAt: string;
+  source: "player" | "bot";
+};
+
+export type RoomFeedback = {
+  playerId: number;
+  rating: number;
+  difficulty: number;
+  wouldPlayAgain: boolean;
+  issueTags: Array<"rules" | "interface" | "balance" | "performance" | "connection" | "accessibility">;
+  note: string;
+  submittedAt: string;
+};
 
 export type RoomSeat = {
   playerId: number;
@@ -13,6 +100,9 @@ export type RoomSeat = {
   joinedAt: string | null;
   ready: boolean;
   selectedFaction: string | null;
+  randomFaction?: boolean;
+  accountId?: string | null;
+  commanderEmblem?: string;
 };
 
 export type RoomEvent = {
@@ -48,20 +138,28 @@ export type RoomAuditEntry = {
 export type StoredRoom = {
   schemaVersion: number;
   code: string;
+  name?: string;
   mode: RoomMode;
   status: RoomStatus;
   revision: number;
   game: GameState;
   initialGame?: GameState;
   availableFactions: string[];
+  enabledExpansions: ExpansionId[];
   hostTokenHash: string;
+  hostAccountId?: string | null;
   seats: RoomSeat[];
   events: RoomEvent[];
   commandReceipts: RoomCommandReceipt[];
   auditStartRevision?: number;
   initialStateHash?: string;
   audit: RoomAuditEntry[];
+  drafts: Array<{ playerId: number; turn: number; orders: SecretOrder[]; updatedAt: string }>;
+  chat: RoomChatState;
+  gatePledges: RoomGatePledge[];
+  feedback: RoomFeedback[];
   turnTimerSeconds: number | null;
+  autoStartWhenReady: boolean;
   turnDeadlineAt: string | null;
   turnTimerPausedRemainingMs: number | null;
   createdAt: string;
@@ -70,14 +168,19 @@ export type StoredRoom = {
 
 export type RoomSummary = {
   code: string;
+  name: string;
   mode: RoomMode;
   status: RoomStatus;
+  phase: RoomPhase;
   revision: number;
   turn: number;
   era: number;
   activePlayerId: number;
+  hostPlayerId: number | null;
   turnTimerSeconds: number | null;
+  autoStartWhenReady: boolean;
   turnDeadlineAt: string | null;
+  enabledExpansions: ExpansionId[];
   availableFactions: Array<{
     id: string;
     name: string;
@@ -98,6 +201,8 @@ export type RoomSummary = {
     displayName: string | null;
     claimed: boolean;
     ready: boolean;
+    randomFaction: boolean;
+    commanderEmblem: string;
     ordersSubmitted: boolean;
   }>;
   recentEvents: RoomEvent[];
@@ -112,6 +217,12 @@ export type RoomSession = {
   revision: number;
   summary: RoomSummary;
   game: GameState;
+  privateDraft?: SecretOrder[];
+  attention: RoomAttention[];
+  chat?: RoomChatSession;
+  gatePledges?: RoomGatePledge[];
+  moderation?: RoomModerationItem[];
+  feedback?: RoomFeedback;
 };
 
 export type RoomIdentity = Pick<
@@ -130,5 +241,8 @@ export interface RoomRepository {
   get(code: string): Promise<StoredRoom | null>;
   put(room: StoredRoom): Promise<void>;
   compareAndSwap(room: StoredRoom, expectedRevision: number): Promise<boolean>;
+  delete(code: string, expectedRevision: number): Promise<boolean>;
+  findByAccount?(accountId: string): Promise<StoredRoom[]>;
+  list?(): Promise<StoredRoom[]>;
   health?(): Promise<{ ok: boolean; detail?: string }>;
 }
