@@ -1,6 +1,6 @@
 {
   "name": "horizon-shattered-reach",
-  "version": "0.20.2",
+  "version": "0.35.4",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -17,7 +17,9 @@
     "test": "node scripts/task-runner.mjs test",
     "simulate:ai": "node --import tsx scripts/simulate-ai.ts",
     "validate:artifact": "node scripts/task-runner.mjs validate-artifact",
+    "validate:app": "node scripts/validate-app-readiness.mjs",
     "validate:content": "node --import tsx scripts/validate-content.ts",
+    "validate:balance": "node --import tsx scripts/validate-shattered-balance.ts",
     "lint": "node scripts/task-runner.mjs lint",
     "typecheck": "node scripts/task-runner.mjs typecheck",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",

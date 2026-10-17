@@ -1,0 +1,59 @@
+{
+  "profileVersion": 1,
+  "id": "ai-easy",
+  "name": "Easy",
+  "description": "A forgiving practice opponent. Explores, establishes Habitats, develops basic production, contributes to the Gate, and uses faction abilities.",
+  "difficulty": "easy",
+  "planning": {
+    "beamWidth": 10,
+    "candidateLimit": 30,
+    "maxOrders": 6,
+    "threatHorizon": 1,
+    "riskTolerance": 0.2,
+    "reserveByEra": [
+      0,
+      1,
+      1,
+      2
+    ],
+    "uncertaintyPenalty": 0.55,
+    "diplomacyHorizon": 2,
+    "gateSafetyMargin": 1,
+    "forecastHorizon": 2,
+    "minimumGateConfidence": 0.95
+  },
+  "priorities": {
+    "legacy": 0.55,
+    "economy": 1.25,
+    "technology": 1.1,
+    "expansion": 1.3,
+    "military": 0.55,
+    "diplomacy": 0.85,
+    "gate": 1.8,
+    "denial": 0,
+    "survival": 1.0
+  },
+  "technology": {
+    "Military": 0.7,
+    "Economy": 1.3,
+    "Policy": 1.25,
+    "Exploration": 1.1,
+    "Resource": 1.2
+  },
+  "behaviors": {
+    "punishFreeRiders": false,
+    "avoidMutualDestruction": true,
+    "protectGateCompletion": true,
+    "preferFlexibleResources": true,
+    "exploitFactionSynergy": true,
+    "recordCounterfactuals": false,
+    "coordinateGateSupport": true,
+    "useMarketForGate": true,
+    "modelOpponents": false,
+    "routeColonies": true,
+    "redTeamNotebook": false,
+    "multiTurnPlanning": false,
+    "factionDoctrine": true,
+    "victoryImpact": false
+  }
+}

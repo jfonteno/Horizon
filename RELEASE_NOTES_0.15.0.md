@@ -21,15 +21,4 @@ Version 0.15.0 completes the next playable-network milestone by bringing the mil
 - Propose Trade Agreements, Non-Aggression Pacts, Open Borders, Research Agreements, Defensive Pacts, and Alliances.
 - Review and accept or reject incoming proposals from the authenticated recipient seat.
 - Cancel outgoing proposals, schedule agreement withdrawal, or break an agreement immediately.
-- Offer Helix Technology Exchange proposals with additional compensation.
-- Convert Aurelian Political Capital through the network command layer.
-- Keep every pending proposal private to the involved civilizations.
-
-### Reliability and privacy
-
-- Atomic room revisions prevent concurrent player actions from overwriting each other.
-- Spectators receive a public projection with all Hidden Legacy cards, private surveys, proposals, sealed Orders, pending Labor, and bot analysis removed.
-- Bot-controlled capture bookkeeping resolves automatically.
-- New tests cover authenticated military commands, diplomacy ownership, privacy, stale revisions, and network room publication boundaries.
-
-This remains an alpha release. Account recovery, matchmaking, room chat, and asynchronous notifications remain future milestones.
+- Offer Helix Technology Exchange proposals with addit

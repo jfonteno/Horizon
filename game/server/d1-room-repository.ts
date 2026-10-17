@@ -32,7 +32,7 @@ export class D1RoomRepository implements RoomRepository {
       .prepare(
         "INSERT INTO horizon_rooms (code, payload, revision, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(code) DO UPDATE SET payload = excluded.payload, revision = excluded.revision, updated_at = excluded.updated_at",
       )
-      .bind(room.code, JSON.stringify(room), room.revision, room.updatedAt)
+      .bind(room.code, JSON.stringify(normalizeStoredRoom(structuredClone(room))), room.revision, room.updatedAt)
       .run();
   }
 
@@ -42,9 +42,33 @@ export class D1RoomRepository implements RoomRepository {
       .prepare(
         "UPDATE horizon_rooms SET payload = ?, revision = ?, updated_at = ? WHERE code = ? AND revision = ?",
       )
-      .bind(JSON.stringify(room), room.revision, room.updatedAt, room.code, expectedRevision)
+      .bind(JSON.stringify(normalizeStoredRoom(structuredClone(room))), room.revision, room.updatedAt, room.code, expectedRevision)
       .run();
     return (result.meta.changes || 0) > 0;
+  }
+
+  async delete(code: string, expectedRevision: number) {
+    await this.initialize();
+    const result = await this.database.prepare("DELETE FROM horizon_rooms WHERE code = ? AND revision = ?")
+      .bind(code, expectedRevision).run();
+    return (result.meta.changes || 0) > 0;
+  }
+
+  async findByAccount(accountId: string) {
+    await this.initialize();
+    const result = await this.database
+      .prepare("SELECT payload FROM horizon_rooms WHERE payload LIKE ? ORDER BY updated_at DESC LIMIT 500")
+      .bind(`%${accountId}%`)
+      .all<{ payload: string }>();
+    return (result.results || [])
+      .map((row) => normalizeStoredRoom(JSON.parse(row.payload) as StoredRoom))
+      .filter((room) => room.hostAccountId === accountId || room.seats.some((seat) => seat.accountId === accountId));
+  }
+
+  async list() {
+    await this.initialize();
+    const result = await this.database.prepare("SELECT payload FROM horizon_rooms ORDER BY updated_at DESC LIMIT 500").all<{ payload: string }>();
+    return (result.results || []).map((row) => normalizeStoredRoom(JSON.parse(row.payload) as StoredRoom));
   }
 
   async health() {

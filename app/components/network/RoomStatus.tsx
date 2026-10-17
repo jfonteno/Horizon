@@ -25,10 +25,6 @@ export default function RoomStatus({
   const playerId = session.playerId;
   const mySubmitted =
     playerId !== undefined ? submitted.has(playerId) : false;
-  const pendingProposals = playerId === undefined ? 0 : session.game.proposals.filter((proposal) => proposal.status === "pending" && (proposal.kind === "technology" ? proposal.buyer === playerId : proposal.to === playerId)).length;
-  const hiddenRequired = playerId !== undefined && (session.game.turn - 1) % 4 === 0 && !session.game.players[playerId].hiddenLegacy[session.game.era]?.selected;
-  const captureRequired = session.game.pendingCenterLoss?.playerId === playerId;
-  const redistributionRequired = playerId !== undefined && session.game.pendingCombatRedistributions.some((pending) => pending.playerId === playerId);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!session.summary.turnDeadlineAt) return;
@@ -50,7 +46,7 @@ export default function RoomStatus({
           Revision <b>{session.revision}</b>
         </span>
         <span>
-          Room <b>{session.summary.status}</b>
+          Phase <b>{session.summary.phase.replace("-", " ")}</b>
         </span>
         <span>
           Connection <b>{connection}</b>
@@ -60,15 +56,15 @@ export default function RoomStatus({
 
       {session.summary.status === "lobby" && <p>Players are claiming seats and confirming readiness.</p>}
       {session.summary.status === "paused" && <p>The host paused command processing. Public inspection remains available.</p>}
-      {(pendingProposals > 0 || hiddenRequired || captureRequired || redistributionRequired) && <div className="attention-list"><b>Decisions requiring attention</b>{pendingProposals > 0 && <span>{pendingProposals} diplomatic proposal{pendingProposals === 1 ? "" : "s"} awaiting response</span>}{hiddenRequired && <span>Select this Era&apos;s Hidden Legacy before sealing Orders</span>}{captureRequired && <span>Resolve captured Center losses</span>}{redistributionRequired && <span>Redistribute surviving Combat Units in the Military panel</span>}</div>}
+      {!!session.attention.length && <div className="attention-list"><b>Your return checklist</b>{session.attention.map((item) => <span key={item.id}>{item.title}: {item.detail}</span>)}</div>}
 
-      {phase === "orders" && (
+      {(phase === "negotiation" || phase === "orders") && (
         <>
           {session.summary.turnTimerSeconds && <p className="timer-rule">At expiration, any civilization without sealed Orders receives Hold and the server resolves the Turn.</p>}
           <p>
             {mySubmitted
               ? "Your Orders are sealed."
-              : "You may continue planning until you seal your Orders."}
+              : "You may negotiate, take immediate actions, and plan until you seal your Orders."}
           </p>
           <div className="room-seats">
             {session.summary.seats.map((seat) => {

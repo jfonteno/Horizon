@@ -10,7 +10,7 @@ export const meridian: FactionDefinition = {
   abilities: [
     { name: "Commercial Foundation", summary: "Begin at Economy II with 2 Currency and a Currency-producing Homeworld." },
     { name: "First Agreement Free", summary: "The Meridian pays no Influence for its first Trade Agreement." },
-    { name: "Brokerage", summary: "Broker one Material, Currency, or Research exchange per civilization pair each Turn and gain 1 Currency from the transaction." },
+    { name: "Brokerage", summary: "Broker one Material, Currency, or Research exchange per civilization pair each Turn. Gain 1 Currency from the first completed Brokerage each Turn; additional trades do not generate Currency." },
     { name: "Economic Salvage", unlock: "Economy III", summary: "Remove 4 controlled Combat Units from Habitats or military vessels to gain 1 Currency. Any vessel left without a CU is destroyed." },
   ],
   objectives: ["Broker: broker 3 civilization-pairs", "Commercial Network: 3 agreements", "Trade Hegemony: earn 8 Currency"],

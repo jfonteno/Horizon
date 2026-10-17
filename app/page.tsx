@@ -2,6 +2,7 @@
 /* eslint-disable react/jsx-no-comment-textnodes, react-hooks/set-state-in-effect */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import DiplomacyHandoff from "./components/DiplomacyHandoff";
 import DiplomacyPanel from "./components/DiplomacyPanel";
 import {
@@ -20,8 +21,13 @@ import ShipIcon from "./components/ShipIcon";
 import {
   RemoteRoomView,
   RoomConsole,
-  RoomSetup,
 } from "./components/MultiplayerRooms";
+import ApplicationShell from "./components/ApplicationShell";
+import StartupScreen from "./components/StartupScreen";
+import FirstHorizonGuide from "./components/FirstHorizonGuide";
+import { hexColumnClass, mapCanvasDimensions } from "./lib/map-geometry";
+import HorizonCodex from "./components/HorizonCodex";
+import TurnResolutionSummary from "./components/TurnResolutionSummary";
 import { tributeCosts } from "../game/rules/economy";
 import {
   clearGame,
@@ -47,17 +53,20 @@ import {
   resolveSecretOrders,
   saveGame,
   takeBotTurn,
-  themeIds,
-  themeLibrary,
   totalCombatUnits,
   gameFormats,
   finalEra,
   gateTarget,
   totalTurns,
+  createFirstHorizon,
+  createFactionAcademy,
 } from "../game";
-import { botProfiles, getBotProfile } from "../bots";
+import { getBotProfile } from "../bots";
 import { explorationIcon, tileAssetFor, type ShipIconType } from "../game/themes/assets";
 import { loadInstalledContent } from "./lib/content-client";
+import { recordOnboardingEvent } from "./lib/onboarding-telemetry";
+import { downloadCloudSave, listCloudSaves, uploadCloudSave } from "./lib/cloud-client";
+import { createLocalRoom } from "./lib/room-client";
 import type {
   CommandMode as Mode,
   ContentCatalog,
@@ -87,9 +96,6 @@ const LABEL: Record<Kind, string> = {
   rift: "",
 };
 
-const MAP_CANVAS_WIDTH = 1420;
-const MAP_CANVAS_HEIGHT = 1260;
-
 type MapUnitSelection =
   | { kind: "explorer"; id: "explorer"; hexId: string }
   | { kind: "colony"; id: "colony"; hexId: string }
@@ -108,7 +114,12 @@ function createMapOrderId(kind: string) {
 }
 
 export default function Home() {
+  const router = useRouter();
+  const launchInProgress = useRef(false);
+  const [launchBusy, setLaunchBusy] = useState(false);
   const [started, setStarted] = useState(false),
+    [startupReady, setStartupReady] = useState(false),
+    [startupMinimumElapsed, setStartupMinimumElapsed] = useState(false),
     [count, setCount] = useState(6),
     [chosen, setChosen] = useState<FactionId[]>(factionIds),
     [selectedMapId, setSelectedMapId] = useState("standard-board"),
@@ -129,7 +140,11 @@ export default function Home() {
     [buildHexId, setBuildHexId] = useState<string | null>(null),
     [mapZoom, setMapZoom] = useState(1),
     [mapDragging, setMapDragging] = useState(false),
+    [launchError, setLaunchError] = useState(""),
     [notice, setNotice] = useState(""),
+    [codexEntry, setCodexEntry] = useState<string | null>(null),
+    [briefDismissedTurn, setBriefDismissedTurn] = useState(0),
+    [cloudReady, setCloudReady] = useState(false),
     mapViewportRef = useRef<HTMLDivElement>(null),
     mapDragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null),
     [handoff, setHandoff] = useState<{
@@ -139,6 +154,7 @@ export default function Home() {
   // Loading a device-local playtest is intentionally a one-time hydration step.
   useEffect(() => {
     let cancelled = false;
+    const timer = window.setTimeout(() => setStartupMinimumElapsed(true), 1500);
     void loadInstalledContent()
       .then((catalog) => {
         if (cancelled) return;
@@ -151,15 +167,29 @@ export default function Home() {
           }
           setGame(saved);
           setTheme(saved.themeId);
-          setStarted(true);
         }
+        void listCloudSaves().then(async(saves)=>{
+          if(saved){setCloudReady(true);return;}
+          const current=saves.filter(save=>!save.conflictOf).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0];
+          if(current){const cloud=await downloadCloudSave(current.id);setGame(cloud.payload);setTheme(cloud.payload.themeId);localStorage.setItem(`horizon-cloud-revision:${current.slotId}`,String(current.revision));}
+          setCloudReady(true);
+        }).catch(()=>setCloudReady(true));
       })
-      .catch((error) => !cancelled && setContentError(error instanceof Error ? error.message : "Content catalog failed to load."));
-    return () => { cancelled = true; };
+      .catch((error) => !cancelled && setContentError(error instanceof Error ? error.message : "Content catalog failed to load."))
+      .finally(() => !cancelled && setStartupReady(true));
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, []);
   useEffect(() => {
     if (game) saveGame(game);
   }, [game]);
+  useEffect(()=>{
+    if(!game||!cloudReady)return;
+    const slot=game.scenarioId==="first-horizon"?"first-horizon":game.scenarioId==="faction-academy"?"academy":"solo",timer=window.setTimeout(()=>{
+      const revision=Number(localStorage.getItem(`horizon-cloud-revision:${slot}`)||0);
+      void uploadCloudSave(game,revision).then(result=>{if(result.status==="saved"&&result.save)localStorage.setItem(`horizon-cloud-revision:${slot}`,String(result.save.revision));else if(result.status==="conflict"&&result.current)localStorage.setItem(`horizon-cloud-revision:${slot}`,String(result.current.revision));}).catch(()=>undefined);
+    },1200);
+    return()=>window.clearTimeout(timer);
+  },[game,cloudReady]);
   function advanceBotAutomation() {
     setPanel("orders");
     setOrderDraft([]);
@@ -228,10 +258,32 @@ export default function Home() {
     setNotice(s);
     window.setTimeout(() => setNotice(""), 2200);
   };
-  const configuredControllers = () => seatControllers.slice(0, count).map<PlayerController>((id) =>
-    id === "human" ? { kind: "human" } : { kind: "bot", profileId: id },
-  );
+  const configuredFactions = () => {
+    const next = chosen.slice(0, count);
+    while (next.length < count) {
+      const available = factionIds.find((id) => !next.includes(id));
+      next.push(available || factionIds[next.length % factionIds.length]);
+    }
+    return next;
+  };
+  const configuredControllers = () => Array.from({ length: count }, (_, index) => seatControllers[index] || "human")
+    .map<PlayerController>((id) => id === "human" ? { kind: "human" } : { kind: "bot", profileId: id });
+  const launchLocalRoom = async (nextGame: Game) => {
+    if (launchInProgress.current) return;
+    launchInProgress.current = true;
+    setLaunchBusy(true);
+    setLaunchError("");
+    try {
+      const session = await createLocalRoom(nextGame);
+      router.push(`/room/${session.code}`);
+    } catch (cause) {
+      launchInProgress.current = false;
+      setLaunchBusy(false);
+      setLaunchError(cause instanceof Error ? cause.message : "The room could not be created.");
+    }
+  };
   const map = mapLibrary[game?.mapId || selectedMapId] || mapLibrary["shattered-reach"],
+    mapCanvas = mapCanvasDimensions(map.columns, map.rows),
     p = game?.players[game.active],
     selected = game?.hexes.find((h) => h.id === game.selected),
     goal = game ? gateTarget(game) : (gameFormats[gameFormat].eras - 1) * count;
@@ -346,7 +398,7 @@ export default function Home() {
   }
 
   function chooseMapAction(action: MapOrderAction) {
-    if (!game || !mapUnit) return;
+    if (!game || !p || !mapUnit) return;
     if (game.orderProtocol.phase !== "orders") {
       setPanel("orders");
       flash("Begin secret Orders before assigning vessel actions.");
@@ -366,7 +418,29 @@ export default function Home() {
     }
     const targets = legalMapTargets(action);
     if (!targets.length) {
-      flash("That action has no legal target right now.");
+      const reason = (() => {
+        if (action === "establish") {
+          const hex = game.hexes.find((candidate) => candidate.id === mapUnit.hexId);
+          if (mapUnit.kind !== "colony") return "Only a Colony Ship can establish a Habitat.";
+          if (!p.modules) return "Construct a Habitat Module before establishing another Habitat.";
+          if (!hex?.revealed) return "Reveal this sector before attempting settlement.";
+          if (hex.owner !== undefined) return "That world is already controlled.";
+          return "Habitats require a revealed resource or barren world. Empty space and Anomalies cannot be settled.";
+        }
+        if (mapUnit.kind === "carrier") {
+          const carrier = game.carriers.find((candidate) => candidate.id === mapUnit.id);
+          if (!carrier?.cu) return "Load at least 1 Combat Unit before this carrier can move.";
+          if (carrier.readyTurn > game.turn) return `This vessel becomes ready on Turn ${carrier.readyTurn}.`;
+          if (carrier.movesRemaining < 1) return "This vessel has no movement remaining this Turn.";
+        }
+        if (mapUnit.kind === "civilian") {
+          const civilian = game.civilianUnits.find((candidate) => candidate.id === mapUnit.id);
+          if (civilian && civilian.readyTurn > game.turn) return `This vessel becomes ready on Turn ${civilian.readyTurn}.`;
+          if (civilian && civilian.movesRemaining < 1) return "This vessel has already acted this Turn.";
+        }
+        return "No legal target is in range. Select a highlighted adjacent sector or choose Hold.";
+      })();
+      flash(reason);
       return;
     }
     setMapIntent(action);
@@ -394,8 +468,8 @@ export default function Home() {
     if (!viewport) return;
     setBoundedZoom(
       Math.min(
-        (viewport.clientWidth - 28) / MAP_CANVAS_WIDTH,
-        (viewport.clientHeight - 28) / MAP_CANVAS_HEIGHT,
+        (viewport.clientWidth - 28) / mapCanvas.width,
+        (viewport.clientHeight - 28) / mapCanvas.height,
         1.12,
       ),
     );
@@ -422,7 +496,7 @@ export default function Home() {
     if (!game || !p) return;
     const h = game.hexes.find((x) => x.id === id)!;
     if (panel === "build" && (buildTargeting || !buildHexId) && game.orderProtocol.phase === "orders") {
-      if (h.owner !== p.id || !h.tier || h.constructionUsedTurn === game.turn) {
+      if (h.owner !== p.id || !h.tier) {
         flash("Choose one of the highlighted Habitats with an available Construction Order.");
         return;
       }
@@ -616,6 +690,7 @@ export default function Home() {
         : [],
     [game],
   );
+  if (!startupReady || !startupMinimumElapsed) return <StartupScreen stage={!startupReady ? "Loading content registry" : "Connecting command interface"} />;
   if (remoteRoom)
     return (
       <RemoteRoomView
@@ -625,139 +700,80 @@ export default function Home() {
     );
   if (!started || !game)
     return (
-      <main className="setup" data-theme={theme}>
-        <div className="stars" />
-        <section className="setup-card">
-          <img src="/horizon-logo.png" alt="Horizon" className="logo" />
-          <p className="kicker">HORIZON PLAYTEST // VERSION 0.20.2</p>
-          <h1>Command the fleets of a broken system.</h1>
-          <p className="lede">
-            A deterministic strategy playtest with secret simultaneous Orders,
-            edge-conflict resolution, Era-end Hidden Legacy reveals, private
-            player views, and server-backed rooms.
-          </p>
-          <div className="setup-row">
-            <div>
-              <label>Players</label>
-              <div className="segmented">
-                {[4, 5, 6].map((n) => (
-                  <button
-                    key={n}
-                    className={count === n ? "active" : ""}
-                    onClick={() => setCount(n)}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label>Game format</label>
-              <div className="segmented">
-                {(Object.keys(gameFormats) as GameFormatId[]).map((id) => (
-                  <button key={id} className={gameFormat === id ? "active" : ""} onClick={() => setGameFormat(id)}>
-                    {gameFormats[id].name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label>Map package</label>
-              <div className="segmented">
-                {mapIds.map((id) => (
-                  <button key={id} className={selectedMapId === id ? "active" : ""} onClick={() => setSelectedMapId(id)}>
-                    {mapLibrary[id].name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label>Visual package</label>
-              <div className="segmented">
-                {themeIds.map((id) => (
-                  <button
-                    key={id}
-                    className={theme === id ? "active" : ""}
-                    onClick={() => setTheme(id)}
-                  >
-                    {themeLibrary[id].name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <p>
-              Worlds and faction home assignments reshuffle each game. Routes,
-              regions, chokepoints, and legal starting hexes remain.
-            </p>
-          </div>
-          <div className="faction-grid">
-            {chosen.slice(0, count).map((id, i) => {
-              const controllerId=seatControllers[i],controller=controllerId==="human"?undefined:getBotProfile(controllerId);
-              return <div className="seat-choice" key={i} style={{ "--f": factionLibrary[id].color } as React.CSSProperties}>
-                <button
-                  className="faction-choice"
-                  onClick={() => {
-                    const n = [...chosen];
-                    n[i] = factionIds[(factionIds.indexOf(id) + 1) % factionIds.length];
-                    setChosen(n);
-                  }}
-                >
-                  {factionLibrary[id].logo && <img className="faction-choice-logo" src={factionLibrary[id].logo} alt="" />}
-                  <span>Seat {i + 1}</span>
-                  <strong>{factionLibrary[id].name}</strong>
-                  <small>{factionLibrary[id].role}</small>
-                </button>
-                <button className={`controller-choice ${controller?"bot":""}`} onClick={()=>{
-                  const options=["human",...botProfiles.map((profile)=>profile.id)],current=options.indexOf(controllerId),next=[...seatControllers];
-                  next[i]=options[(current+1)%options.length];setSeatControllers(next);
-                }}><span>{controller?"AI CONTROLLER":"PLAYER CONTROL"}</span><b>{controller?.name||"Human"}</b></button>
-              </div>;
-            })}
-          </div>
-          <small className="fineprint">NETWORK ROOMS // Human seats choose their factions after joining the lobby. Setup choices provide bot defaults.</small>
-          <button
-            className="primary launch"
-            onClick={() => {
-              setGame(createGame(count, chosen, selectedMapId, theme, undefined, configuredControllers(), false, gameFormat));
-              setStarted(true);
-            }}
-          >
-            Enter the Reach
-          </button>
-          <button
-            className="simulation-launch"
-            onClick={() => {
-              const controllers = factionIds.slice(0, 6).map<PlayerController>(() => ({ kind: "bot", profileId: "meta-analyst" }));
-              setCount(6);
-              setChosen(factionIds.slice(0, 6));
-              setSeatControllers(Array(6).fill("meta-analyst"));
-              setSimulationPaused(false);
-              setSimulationSpeed(650);
-              setGame(createGame(6, factionIds.slice(0, 6), "standard-board", theme, undefined, controllers, true, gameFormat));
-              setStarted(true);
-            }}
-          ><span>WATCH ALL SIX FACTIONS</span><b>Run spectator simulation</b><small>Meta Analyst controls every civilization. Pause, step, or change speed at any time.</small></button>
-          <RoomSetup
-            gameFactory={() =>
-              createGame(count, chosen, selectedMapId, theme, undefined, configuredControllers(), false, gameFormat)
-            }
-            startHost={(session) => {
-              setGame(session.game);
-              setTheme(session.game.themeId);
-              setStarted(true);
-            }}
-            openRemote={setRemoteRoom}
-          />
-          {contentCatalog && contentCatalog.packs.length > 0 && <small className="fineprint">CONTENT PACKS // {contentCatalog.packs.map((pack) => `${pack.name} ${pack.version}`).join(" · ")}</small>}
-          {(contentError || contentCatalog?.issues.length) ? <small className="fineprint room-error">{contentError || `${contentCatalog!.issues.length} content pack(s) were rejected. Check server logs.`}</small> : null}
-          <small className="fineprint">Progress saves automatically. Version 0.20.2 preserves earlier rooms and their original board geometry.</small>
-        </section>
-      </main>
+      <ApplicationShell
+        launchBusy={launchBusy}
+        contentCatalog={contentCatalog}
+        contentError={launchError || contentError || (contentCatalog?.issues.length ? `${contentCatalog.issues.length} content pack(s) were rejected. Check server logs.` : "")}
+        hasLocalGame={Boolean(game)}
+        count={count}
+        setCount={setCount}
+        chosen={chosen}
+        setChosen={setChosen}
+        selectedMapId={selectedMapId}
+        setSelectedMapId={setSelectedMapId}
+        gameFormat={gameFormat}
+        setGameFormat={setGameFormat}
+        theme={theme}
+        setTheme={setTheme}
+        seatControllers={seatControllers}
+        setSeatControllers={setSeatControllers}
+        createLocal={() => void launchLocalRoom(createGame(count, configuredFactions(), selectedMapId, theme, undefined, configuredControllers(), false, gameFormat))}
+        startTutorial={() => {
+          setCount(3);
+          setChosen(["foundry", "helix", "varkesh"]);
+          setSeatControllers(["human", "tutorial-guide", "tutorial-guide"]);
+          recordOnboardingEvent("tutorial-started", 0);
+          void launchLocalRoom(createFirstHorizon(theme));
+        }}
+        startFactionTraining={(factionId) => {
+          const rivals = factionIds.filter((id) => id !== factionId).slice(0, 2);
+          setCount(3);
+          setChosen([factionId, ...rivals]);
+          setSeatControllers(["human", "tutorial-guide", "tutorial-guide"]);
+          void launchLocalRoom(createFactionAcademy(factionId, theme));
+        }}
+        quickStart={() => {
+          recordOnboardingEvent("quick-start");
+          const random = crypto.getRandomValues(new Uint32Array(32));
+          const quickCount = 4 + random[0] % 3;
+          const compatibleMaps = mapIds.filter((id) => {
+            const candidate = mapLibrary[id];
+            return quickCount >= (candidate.minPlayers || 1) && quickCount <= (candidate.maxPlayers || candidate.starts.length);
+          });
+          const quickMap = compatibleMaps[random[1] % compatibleMaps.length];
+          const shuffled = [...factionIds];
+          for (let index = shuffled.length - 1; index > 0; index--) {
+            const swap = random[index + 2] % (index + 1);
+            [shuffled[index], shuffled[swap]] = [shuffled[swap], shuffled[index]];
+          }
+          const quickFactions = shuffled.slice(0, quickCount);
+          const quickControllers: PlayerController[] = quickFactions.map((_, index) => index === 0 ? { kind: "human" } : { kind: "bot", profileId: "ai-medium" });
+          const quickSeed = random[20] % 1_000_000;
+          setCount(quickCount);
+          setChosen(quickFactions);
+          setSelectedMapId(quickMap);
+          setSeatControllers(quickControllers.map((controller) => controller.kind === "human" ? "human" : controller.profileId));
+          void launchLocalRoom(createGame(quickCount, quickFactions, quickMap, theme, quickSeed, quickControllers, false, "four-era"));
+        }}
+        runSimulation={() => {
+          const controllers = factionIds.slice(0, 6).map<PlayerController>(() => ({ kind: "bot", profileId: "ai-emperor" }));
+          setCount(6);
+          setChosen(factionIds.slice(0, 6));
+          setSeatControllers(Array(6).fill("ai-emperor"));
+          setSimulationPaused(false);
+          setSimulationSpeed(650);
+          void launchLocalRoom(createGame(6, factionIds.slice(0, 6), "standard-board", theme, undefined, controllers, true, gameFormat));
+        }}
+        gameFactory={() => createGame(count, configuredFactions(), selectedMapId, theme, undefined, configuredControllers(), false, gameFormat)}
+        startHost={(session) => router.push(`/room/${session.code}`)}
+        openRemote={setRemoteRoom}
+        continueLocal={() => { if(game){if(game.scenarioId==="first-horizon") recordOnboardingEvent("tutorial-resumed",game.tutorial?.step);void launchLocalRoom(game);} }}
+      />
     );
 
   const buildSelectionActive = panel === "build" && (buildTargeting || !buildHexId),
     buildableHabitats = game.hexes
-      .filter((hex) => hex.owner === p!.id && hex.tier && hex.constructionUsedTurn !== game.turn)
+      .filter((hex) => hex.owner === p!.id && hex.tier)
       .map((hex) => hex.id),
     activeMapTargets = buildSelectionActive ? buildableHabitats : mapIntent ? legalMapTargets(mapIntent) : [],
     selectedMapCarrier = mapUnit?.kind === "carrier"
@@ -785,7 +801,12 @@ export default function Home() {
       data-theme={game.themeId}
       data-spectator={game.spectatorMode}
       data-map-columns={map.columns}
-      style={{ "--player": p!.color } as React.CSSProperties}
+      data-map-rows={map.rows}
+      style={{
+        "--player": p!.color,
+        "--map-columns": map.columns,
+        "--map-rows": map.rows,
+      } as React.CSSProperties}
     >
       <header className="topbar">
         <img src="/horizon-logo.png" alt="Horizon" />
@@ -806,6 +827,7 @@ export default function Home() {
             />
           </div>
         </div>
+        <button className="ghost" onClick={() => setCodexEntry("getting-started")}>Rules</button>
         <button
           className="ghost"
           onClick={() => {
@@ -821,6 +843,8 @@ export default function Home() {
       </header>
       {game.spectatorMode && <SimulationControls game={game} paused={simulationPaused} speed={simulationSpeed} setPaused={setSimulationPaused} setSpeed={setSimulationSpeed} step={advanceBotAutomation}/>} 
       {notice && <div className="notice">{notice}</div>}
+      {game.resolutionBriefs?.find((brief) => brief.playerId === p!.id && brief.turn > briefDismissedTurn) && <TurnResolutionSummary brief={game.resolutionBriefs.find((brief) => brief.playerId === p!.id && brief.turn > briefDismissedTurn)!} close={() => setBriefDismissedTurn(game.resolutionBriefs!.find((brief) => brief.playerId === p!.id)!.turn)} />}
+      {codexEntry && <div className="game-codex-overlay" role="dialog" aria-modal="true" aria-label="Horizon Codex"><div><header><span>HORIZON CODEX</span><button onClick={() => setCodexEntry(null)}>Close</button></header><HorizonCodex initialEntryId={codexEntry} compact /></div></div>}
       <section className="play-area">
         <aside className="left-rail">
           <div className="identity">
@@ -996,8 +1020,9 @@ export default function Home() {
               <>
                 <h3>System Market</h3>
                 <p>
-                  Economy {p!.tech.Economy}. Influence and Labor cannot enter
-                  the Market.
+                  Economy {p!.tech.Economy}. Labor cannot enter the Market.
+                  Aurelians at Policy II can exchange 2 Influence for 1 Material,
+                  Currency, or Research.
                 </p>
                 <div className="market-list">
                   <button onClick={() => market("currency", "material")}>
@@ -1012,6 +1037,10 @@ export default function Home() {
                   <button onClick={() => market("research", "currency")}>
                     Research → Currency
                   </button>
+                  {p!.faction === "aurelians" && p!.tech.Policy >= 2 && (["material", "currency", "research"] as const).map((resource) =>
+                    <button key={`influence-${resource}`} onClick={() => market("influence", resource)}>
+                      Influence → {resource}
+                    </button>)}
                 </div>
                 <label className="score-adjust">
                   Manual LP{" "}
@@ -1208,11 +1237,11 @@ export default function Home() {
               <div
                 className="map-scale"
                 style={{
-                  width: MAP_CANVAS_WIDTH * mapZoom,
-                  height: MAP_CANVAS_HEIGHT * mapZoom,
+                  width: mapCanvas.width * mapZoom,
+                  height: mapCanvas.height * mapZoom,
                 }}
               >
-                <div className="map-stage" style={{ transform: `scale(${mapZoom})` }}>
+                <div className="map-stage" style={{ width: mapCanvas.width, height: mapCanvas.height, transform: `scale(${mapZoom})` }}>
                   <div className="sector-orbit orbit-one" />
                   <div className="sector-orbit orbit-two" />
                   <div className="hex-map">
@@ -1234,7 +1263,7 @@ export default function Home() {
                       data-hex-id={h.id}
                       aria-label={`${h.id} ${description(h)}${fleets.length ? ` ${fleets.length} carriers ${fleetCU} CU` : ""}`}
                       onClick={() => clickHex(h.id)}
-                      className={`hex ${h.kind} ${!h.revealed ? "concealed" : ""} ${privateSurvey ? "privately-surveyed" : ""} ${game.selected === h.id ? "selected" : ""} ${activeMapTargets.includes(h.id) ? "legal-target" : ""}`}
+                      className={`hex ${hexColumnClass(h.col)} ${h.kind} ${!h.revealed ? "concealed" : ""} ${privateSurvey ? "privately-surveyed" : ""} ${game.selected === h.id ? "selected" : ""} ${activeMapTargets.includes(h.id) ? "legal-target" : ""}`}
                       style={
                         {
                           gridColumn: h.col + 1,
@@ -1278,7 +1307,7 @@ export default function Home() {
                         carriers = game.carriers.filter((carrier) => carrier.hex === h.id);
                       return (
                         <div
-                          className={`unit-cell ${h.col % 2 ? "offset" : ""}`}
+                          className={`unit-cell ${hexColumnClass(h.col)}`}
                           key={`units-${h.id}`}
                           style={{ gridColumn: h.col + 1, gridRow: h.row + 1 }}
                         >
@@ -1389,6 +1418,7 @@ export default function Home() {
           </section>
         )}
         <aside className="right-rail">
+          {game.scenarioId === "first-horizon" && <FirstHorizonGuide game={game} commit={setGame} openPanel={setPanel} openCodex={setCodexEntry} />}
           <section>
             <div className="section-title">
               <span>Standing</span>

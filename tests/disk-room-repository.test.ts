@@ -25,7 +25,20 @@ test("disk rooms survive a repository restart", async (context) => {
   assert.equal(resumed.code, created.code);
   assert.equal(resumed.revision, created.revision);
   assert.equal((await restartedRepository.health()).ok, true);
-  assert.match(await readFile(join(directory, `${created.code}.json`), "utf8"), /"schemaVersion":5/);
+  assert.match(await readFile(join(directory, `${created.code}.json`), "utf8"), /"schemaVersion":12/);
+});
+
+test("disk room deletion is revision checked and persists across a restart", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "horizon-delete-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const repository = new DiskRoomRepository(directory);
+  const created = await new RoomService(repository).create(
+    createGame(4, [...factions], "shattered-reach", "horizon-base", 1603), "Host", "network",
+  );
+  assert.equal(await repository.delete(created.code, created.revision - 1), false);
+  assert.ok(await repository.get(created.code));
+  assert.equal(await repository.delete(created.code, created.revision), true);
+  assert.equal(await new DiskRoomRepository(directory).get(created.code), null);
 });
 
 test("disk compare-and-swap permits only one concurrent room revision", async (context) => {

@@ -13,7 +13,7 @@ rm -f "${archive}"
   zip -q -r "${archive}" . \
     -x 'node_modules/*' 'dist/*' '.next/*' '.sites-runtime/*' \
        '.wrangler/*' '.git/*' 'releases/*' 'data/*' 'backups/*' \
-       '.env' '.env.local' '*.log' '*.tsbuildinfo'
+       '.env' '.env.local' 'horizon-auth.env' '*.log' '*.tsbuildinfo'
 )
 unzip -tq "${archive}"
 echo "${archive}"

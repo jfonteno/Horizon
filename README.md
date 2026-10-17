@@ -1,14 +1,233 @@
 # Horizon
 
-Horizon is a deterministic strategy-game prototype built as a modular TypeScript web application. This package currently includes the Shattered Reach map and the six original civilizations.
+Horizon is a deterministic strategy-game prototype built as a modular TypeScript web application. This package includes the Core Set, the Shattered Reach map, and the first playable Shattered Reach expansion factions.
+
+## Salvo targeting update (0.35.1)
+
+A Salvo artillery vessel may fire Bombardment 1 after moving on the same Turn. Select its destination first to preview target hexes from that position, or select a shot first and then choose a compatible destination. Bombardment 2 still requires the vessel to hold position. Any non-rift hex in range can be selected, including empty, friendly, unrevealed, and enemy Habitat hexes. Bombardment resolves after fleet movement and damages hostile Combat Units present then; an empty or otherwise protected hex consumes the shot but grants no bombardment objective progress. The bot now considers firing after moving and favors stationary Habitat garrisons.
 
 ## Start locally
+
+Current release: **0.35.4**. See `RELEASE_NOTES_0.35.4.md` for the latest closed-beta playtest patch.
+
+## Version 0.34.8: Faction Engines
+
+Wayfarers receive 2 starting Influence and an Arkship Voyage objective. Aurelians can trade and exchange Influence at Policy II for new LP routes. The starting Salvo Bombard Frigate moves three hexes. Emperor bots have more explicit faction priorities, with a measured 33-game comparison for each player count and remaining Spires and Salvo limits in `RELEASE_NOTES_0.34.8.md`.
+
+## Version 0.34.7: Aegis Security Export
+
+Aegis receives a one-time 1 Currency discount on its first economic Center. At Economy II it can offer a new Blockade directly through Diplomacy: the buyer funds construction and chooses a controlled deployment hex, while Aegis receives an additional negotiated fee. The Academy, Codex, and bots support the new route. See `RELEASE_NOTES_0.34.7.md` for matched simulation results and remaining limits.
+
+## Version 0.34.6: Persistent bot projects
+
+Medium, Hard, and Emperor bots plan prerequisite chains for faction and universal Legacy objectives, forecast the resources and Labor for each chain, seek the missing inputs through production or trade, and remember projects across Turns. The plan is recalculated as milestones complete and Gate needs change. See `RELEASE_NOTES_0.34.6.md` for comparison results and limits.
+
+## Version 0.34.5: Bot economic and exploration planning
+
+Bots route explorers through known sectors to new frontiers, seek diplomatic contacts, and invest in recurring Currency before exhausting scarce reserves. Wayfarers seek Material more deliberately. See `RELEASE_NOTES_0.34.5.md` for stress results and remaining limits.
+
+## Version 0.34.3: Foundry Currency route
+
+Foundry bots seek a Currency specialist early, offer Material for scarce Currency, and scout for contact when no specialist is available. See `RELEASE_NOTES_0.34.3.md` for the observed limits.
+
+## Version 0.34.2: Gate planning and objective feedback
+
+Bots forecast actual production, reserve for upcoming Gate costs, pursue missing production routes and trades, and score actions against measurable Legacy progress. See `RELEASE_NOTES_0.34.2.md` for the 27-seed comparison and remaining LP gap.
+
+## Version 0.34.1: Adaptive faction priorities
+
+Bots now rank faction goals each Turn, forecast early trade partners from public faction specialties, and adjust garrisons when visible threats approach. Aurelians have a planned Influence and Currency opening; Spires focus on concentrated Centers and Resource technology. See `RELEASE_NOTES_0.34.1.md`.
+
+## Version 0.34.0: AI Challenge Levels
+
+The host chooses Easy, Medium, Hard, or Emperor independently for each bot seat in the room lobby. Bots now combine faction doctrine, objective pursuit, public scoring threat ranges, and resource-partner strategy. See `RELEASE_NOTES_0.34.0.md`.
+
+## Version 0.33.18: Windows Build Fix
+
+The Windows self-hosted launcher can build from extracted paths containing spaces or parentheses, including a Downloads folder ending in `(1)`. See `RELEASE_NOTES_0.33.18.md`.
+
+## Version 0.33.17: My Games Management
+
+Completed campaigns are listed separately below active games. Signed-in commanders can download game data or delete a single game or a bulk selection. A host's deletion permanently removes a room for everyone; a participant's deletion removes it only from their own list. Download important game data before deletion.
+
+## Version 0.33.16: Room Persistence and Faction Bots
+
+See `RELEASE_NOTES_0.33.16.md` for save and audit fixes, Explorer persistence, and faction AI logistics.
+
+## Version 0.33.15: Playtest Usability and Helix Reallocation
+
+See `RELEASE_NOTES_0.33.15.md` for room names, seat layout, quick Order review, expanded Codex, and hex fleet CU details.
+
+## Version 0.33.14: Playtest Clarity and Audio
+
+This patch adds Tactical Focus as the active-match soundtrack and Single Click for interface controls. It also improves mobile map access, lobby seat spacing, faction strategy guides, resource iconography and production forecasts, Orders review, bot defaults, and Meridian Brokerage consent. See the release notes for details.
+
+- Tactical Focus plays during active matches and Single Click confirms basic interface actions, with persistent mute and volume controls.
+- Resource icons and colors are consistent across status displays. Economy now itemizes deterministic next-production sources.
+- Faction guides cover strategic identity, opening priorities, middle and late game, and common pitfalls.
+- Lobby seats use a bounded layout and a larger central logo across screen sizes.
+- Orders review lists ready vessels without Orders, Salvo movement is available contextually, and Meridian's Brokerage bonus is limited to the first completed deal per Turn.
+- Academy Currency access, mobile map fitting, and baseline bot selection are improved.
+
+## Version 0.33.13: Unified Habitat Construction
+
+- Selecting one of your controlled Habitats now opens the same complete Build interface as the Build tab.
+- The shortened contextual construction list has been removed, eliminating the separate inventory that omitted faction-specific options.
+- Standard construction, faction units, faction upgrades, Factory operations, and Blockade operations remain together in one authoritative menu.
+
+## Version 0.33.12: Wayfarer Mobile Extraction
+
+- Every deployed Arkship, Grand Ark, and Worldship automatically produces 1 matching resource from the Material, Currency, Research, or Influence world it occupies.
+- Mobile extraction is independent of Resource IV, so it remains exactly 1 resource while eligible mobile Centers continue to double normally.
+- Multiple mobile Habitats may each extract, including when they share a world, and each productive location advances Wayfarer production-location Legacy tracking.
+- Hex production details now show extraction beside mobile Center production.
+- Bot forecasting values both mobile extraction and mobile Centers when planning Wayfarer movement and reserves.
+
+## Version 0.33.11: Closed Beta Continuity
+
+- My Games replaces individual room shortcuts and divides linked campaigns into Active Games and Previous Games.
+- Commander accounts may keep and resume multiple simultaneous games across devices.
+- Hosts may give rooms an optional name while the room code remains the invitation and recovery credential. Unnamed rooms use their code as their name.
+- Multiple Habitat establishments now account for every reserved Module and may use Habitat Modules constructed during the same Turn.
+- Aegis Blockade sale prices now pass the command boundary as validated resource bundles without the former negative-integer error.
+
+## Version 0.33.10: Aegis Blockade Logistics
+
+- Blockade Platforms and the Blockade Deployment Vessel now unlock at Military II.
+- Every crewed military vessel can carry one Blockade; the Aegis specialist vessel carries three.
+- Select a military vessel on the map to load or deploy Blockade cargo with normal Orders timing.
+- Loaded Blockades remain inactive, move with their carrier, and are destroyed if that vessel is destroyed.
+- Aegis Security Export unlocks at Economy II. On acceptance, the buyer selects a controlled hex where the purchased Blockade deploys immediately.
+- Build, Diplomacy, and Horizon Academy guidance now explain the complete Blockade workflow.
+
+## Version 0.33.9: Automatic Lobby Launch
+
+- Room hosts may opt into automatic launch during room creation or from the faction lobby.
+- The authoritative server starts the game when every human seat is claimed, has a faction, and is ready, even when the host has closed Horizon.
+- Random bot factions are assigned as part of the same launch transaction.
+- Configured Turn timers begin immediately when automatic launch occurs, with a visible warning in the lobby.
+- Readiness and the automatic-launch preference persist with the room across reconnects and server restarts.
+
+## Version 0.33.8: Radial Lobby Collision Correction
+
+- Top and bottom seats now extend their labels and controls away from the central room hub.
+- The host controller box no longer covers the Horizon logo at the top of the radial layout.
+- The bottom seat name no longer overlaps the room code or commander count.
+- Four, five, and six-seat rooms retain the responsive radial geometry on desktop and mobile.
+
+## Version 0.33.7: Shattered Reach Access Audit
+
+- Every expansion faction now receives a prominent faction-specific section at the top of the Build menu.
+- Locked faction vessels and upgrades remain visible with their exact Technology requirement instead of disappearing.
+- Aegis Blockade Tenders open Blockade deployment directly, while owned Blockades expose sale controls in Build and Diplomacy.
+- Wayfarer mobile construction can target any owned deployed mobile Habitat, regardless of the permanent Habitat currently selected.
+- Guild Factory output controls now appear in Build alongside Enhanced Centers and Factory construction.
+
+## Version 0.33.6: Era Transition Recovery
+
+- Mandatory post-combat cleanup now takes priority over the new-Era Hidden Legacy overlay.
+- Post-combat CU redistribution is accepted before Hidden Legacy selection, preventing a circular command lock.
+- The interface automatically opens Fleet Command when surviving CUs must be redistributed.
+- Hidden Legacy choices are prepared automatically at every Era transition and repaired when older rooms are loaded.
+
+## Version 0.33.4: Complete Lobby Viewport Correction
+
+- The faction lobby explicitly overrides the generic vertically centered dialog layout, preventing tall lobbies from beginning above the viewport.
+- The complete six-seat visual now fits within a single desktop or mobile viewport and scales down on shorter screens.
+- The lobby remains top-anchored and all settings below the seat visual remain independently reachable by scrolling.
+
+## Version 0.33.3: Lobby Viewport Correction
+
+- New and returning lobbies always open at the room header instead of retaining an earlier scroll position.
+- The fixed lobby overlay owns one predictable viewport-height scroll surface on desktop, installed-app, and mobile layouts.
+- Radial seats use safe stage insets so top, bottom, and side seats remain completely visible.
+- Mobile keeps the faction emblem, labels, and Human or Bot controls inside the stage boundary.
+
+## Version 0.33.2: Playtest Control
+
+- Six-seat rooms use a radial faction-selection display with seat-level human, bot, assigned-faction, and Random controls.
+- Players enter the existing faction dossier by selecting their own seat, then confirm the faction from its summary.
+- Operations can switch between verified Commander accounts and temporary Room Code access without restarting the server.
+- New-room creation, spectators, and a network notice can be adjusted during a playtest window.
+- The expanded Operations console manages live games, Commander support, access policy, moderation counts, and service health.
+
+## Version 0.33.1: Verified Commander Profiles
+
+- Passwordless email verification creates or resumes a persistent Commander without storing a password.
+- Existing recovery-only profiles can link email, Google, Steam, or Apple without losing rooms or progress.
+- Commander Profile is now a dedicated page with career statistics, faction-emblem progress, recent matches, linked identities, active devices, content access, recovery, export, and deletion controls.
+- Email verification supports Resend delivery and an explicit server-console test mode.
+- Native Windows hosting generates and preserves its authentication secret automatically and enables Steam sign-in by default.
+- Health checks and server startup report exactly which identity providers are configured.
+
+## Version 0.33.0: Closed Beta Multiplayer Foundation
+
+- Network creation and joining now require a persistent Commander account.
+- Room configuration is consolidated into one page, followed by a visual faction-selection lobby.
+- Hosts can switch seats between human and bot control and assign a bot faction or leave it Random.
+- Completed eligible multiplayer games settle once into cross-device Commander statistics.
+- Faction emblems unlock after three eligible wins and can be selected from Commander Profile.
+- Invitation authentication returns players to the room they were trying to join.
+
+## Version 0.32.4: Academy and Arcology Polish
+
+Wayfarer mobile Habitats now use larger vessel icons and expose Migration plus mobile-only construction directly from the map. Farbound Exploration vessels can privately survey and move in the same Turn, with private survey art visible only to its owner. Salvo artillery offers explicit Bombardment strength choices and prevents Bombardment 2 from moving. Aegis Blockades show unique owner-colored icons, respect Open Borders, and never award Glory. Faction cards, Diplomacy status, the collapsible resource tab, Academy foundation launch, and expansion preview pages have also been clarified.
+
+## Version 0.32.1: Shattered Reach Usability
+
+Salvo artillery now exposes a map-first Bombard action with highlighted legal target hexes and deterministic automatic damage allocation. Aegis players can sell Blockades through accepted Diplomacy proposals or gift them through Orders. Every Horizon Academy exercise now gives an exact click path, prepares the pieces needed for its lesson, and lets players restore temporarily hidden guidance without restarting.
+
+## Version 0.32.0: Closed Beta Systems
+
+Commander-linked rooms now form a complete Game Library, completed matches expose detailed Gate and Legacy review, hosts can create clean rematch lobbies, and every human participant can submit structured private feedback. Playtest exports include lifecycle, moderation, objective, Gate, and feedback metrics. Notification categories, color-accessible markers, richer Operations room metrics, and schema-safe self-hosted persistence support sustained closed-beta play.
+
+## Version 0.30.1: Colony Ship Fleets
+
+Civilizations can build additional Colony Ships at any controlled Habitat for 2 Material, 2 Currency, and 1 Labor. Each ship becomes ready next Turn, moves independently, and uses one Habitat Module when establishing an Outpost. Ordinary military forces cannot destroy or capture Colony Ships, but completed Habitats remain vulnerable to military occupation. Future Corsair boarding is a planned faction-only exception, not a current Core Set ability.
+
+## Version 0.30.0: Connected Command
+
+Network rooms now include persistent All Chat, private direct messages, private group channels, a system feed, unread indicators, proposal and hex references, blocking, muting, reporting, and a host review queue. Public Gate pledges make cooperative planning explicit without turning commitments into automatic Orders.
+
+Players can counter incoming trades and inspect the resulting negotiation chain. Trade terms are normalized before evaluation so an offer cannot request and return the same resource, while AI negotiators search for legal, meaningful improvements and abandon exhausted counter chains. The Command Board also uses a smaller hex summary, map overlays for region and seed details, aligned room controls, a dedicated Academy icon, and a simplified map toolbar.
+
+## Version 0.29.1: Map and Launch Reliability
+
+Hex and unit taps now preserve their button targets while intentional drags and pinch gestures control the map. Quick Start navigates directly into its newly created room, shows launch progress, and prevents duplicate creation. Downloadable launchers reuse a production build and durable storage. AI purchase budgeting avoids copying unrelated game history for every candidate plan.
+
+## Version 0.29.0: Strategic AI
+
+Version 0.29.0 makes the Core Set bots plan around reachable Legacy paths instead of treating individual Orders as isolated utility scores. They track Hidden, Universal, Civilization, and Gate goals, estimate public victory threats and Gate risk, adapt diplomatic stances, price trades against both civilizations, counter unfavorable offers, and choose more efficient military task forces. Self-play reporting now records objective completion, faction balance, Gate consistency, counteroffers, and invalid-plan fallbacks.
+
+Measured results and remaining performance targets are documented in [AI validation](docs/AI_VALIDATION_0.29.0.md). Hidden-objective consistency and Standard Board Gate survival still need calibration before the bots can be considered consistently excellent.
+
+## Version 0.28.0: Reliable Multiplayer
+
+Version 0.28.0 makes long-running rooms easier to leave and safely return to. Each private session receives an authoritative checklist of decisions requiring that player, the room exposes a precise public phase, installed clients can show opt-in background reminders, hosts can transfer authority to another claimed human seat, and reconnecting or returning to a room tab forces an immediate synchronization. Timer reconciliation also recovers ready-to-resolve rooms.
+
+The planned 0.27.2 corrections are included in this release. Mobile lobbies have one reachable scroll surface, the Network map supports drag and pinch gestures, First Horizon begins with Hidden Legacy and progresses through authoritative interactions, and Quick Start randomizes player count, map, factions, and seed.
+
+## Version 0.27.1: Command Interface Reliability
+
+First Horizon now creates its three-seat local room without passing through network player-count restrictions, while all configurable room launches normalize the visible seat count into a complete faction roster. Menu controls remain interactive across application updates, lifecycle notices no longer cover the lower-right interface, the Commander Profile and soundtrack controls have explicit interactive surfaces, and the installed application prefers fullscreen presentation without a persistent window-controls overlay. A new Horizon briefing panel replaces duplicated First Horizon promotions with Game News, New Features, Upcoming, and Featured items.
+
+## Version 0.27.0: Unified Command Interface
+
+Every launch path now creates an authoritative room and opens the same map-first Command Board. Local pass-and-play, Quick Start, First Horizon, simulations, and online rooms share one responsive interface. Public civilization dossiers, nonblocking First Horizon guidance, faction classes, menu-wide music, consolidated activity notices, 1-minute to 48-hour timers, server-synchronized private drafts, structured previous-Turn replay, and a purpose-built board background complete the release.
+
+## Version 0.26.0: Commander Identity and Operations
+
+Commander accounts now support multiple managed device sessions, recovery-key rotation, Apple and Google OpenID Connect, Steam OpenID, linked identity controls, synchronized preferences, and versioned solo cloud saves with non-destructive conflict copies. Horizon Operations adds role-gated aggregate metrics, account search, suspensions, session revocation, forced renames, support notes, provider detachment, save repair, health status, and audited administrative actions. No migration from pre-0.26 account records is attempted.
+
+### Install the app
+
+Open a production HTTPS deployment in a supported browser and choose **Install Horizon** from the in-app prompt or the browser menu. The installed application opens in a dedicated window and includes Create, Join, and Continue shortcuts. Network rooms still require a connection to the authoritative Horizon server.
 
 ### Windows
 
 1. Install Node.js 22 or newer from https://nodejs.org.
 2. Double-click `START_HORIZON.bat`.
-3. On the first launch, leave the command window open while it installs the required components.
+3. On the first launch, leave the command window open while it installs the required components and builds the release. Unchanged builds are reused on later launches.
 4. Keep the command window open while playing. If startup fails, the window now remains open and displays the cause.
 
 ### macOS or Linux
@@ -38,6 +257,14 @@ bots/                        Drop-in AI personality profiles and schema
 app/api/rooms/               Server room API
 ```
 
+## Version 0.23.0: Production Foundation
+
+Version 0.23.0 adds optional commander profiles with private recovery keys. A profile can recover its linked player seat on another device, including host authority, without exposing room credentials in URLs. Recovery rotates the room token so an older device cannot silently retain control.
+
+The Windows and Linux self-hosted server now persists both rooms and account profiles with atomic writes. Cloud deployments persist the same records in D1. Multiplayer clients use authenticated long polling for low-latency room updates and fall back to ordinary synchronization after a network interruption. Rate limits, structured diagnostics, health metadata, privacy and terms pages, data export, profile deletion, migration coverage, and profile-aware backups complete the first production operations layer.
+
+Apple, Google, and Steam sign-in arrived in 0.26.0. Native store wrappers, purchase systems, push notifications, and multi-region service operation remain future release work.
+
 The registries in `game/factions/index.ts`, `game/maps/index.ts`, and `game/themes/index.ts` are the public libraries used by the game. Interface code does not need to know where an individual package lives.
 
 ## Development
@@ -55,11 +282,20 @@ Before committing:
 npm run lint
 npm run typecheck
 npm test
+npm run validate:app
 ```
 
 ## Content Packs
 
 Version 0.17.0 loads validated external maps, factions, and visual assets from `data/content` without rebuilding Horizon. See [docs/CONTENT_PACKS.md](docs/CONTENT_PACKS.md) and the included `content-packs/frontier-example` reference.
+
+## Version 0.20.4: Faction Ability Integrity
+
+Version 0.20.4 verifies every core faction ability from the player interface through authoritative resolution. Farbound Forward Scan now uses the correct availability flag, requires a ready vessel, rejects already-known targets, and exposes private hex information only to the Farbound player. Network players may plan actions, negotiate, and seal Orders directly during Negotiation without a separate phase transition. Existing room saves remain compatible.
+
+## Version 0.20.3: Map Control and Geography
+
+Version 0.20.3 makes every owned exploration, colony, civilian, and military vessel directly controllable from the network map. Draftable map actions remain available during Negotiation, each constructed exploration hull receives its own selectable marker, and Survey actions appear in the vessel context menu. The Standard Board returns to a regular side-length-5, 61-sector hexagon. Shattered Reach keeps 61 playable sectors while replacing scattered holes with deep void gulfs and narrow routes. Existing rooms retain the geometry they began with.
 
 ## Version 0.20.2: Illustrated Faction Archive
 

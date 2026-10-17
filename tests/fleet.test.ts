@@ -26,13 +26,13 @@ function adjacentOpen(game: ReturnType<typeof fleetGame>, origin: string) {
   return id;
 }
 
-test("Varkesh carrier discount and one Construction Order are enforced", () => {
+test("Varkesh carrier discount supports multiple affordable Construction Orders", () => {
   const game = fleetGame();
   const home = mapLibrary[game.mapId].starts[0];
   game.players[0].tech.Military = 2;
   assert.deepEqual(carrierCost(game.players[0], "frigate"), { material: 1, currency: 2, labor: 1 });
   assert.equal(buildCarrier(game, 0, home, "frigate").ok, true);
-  assert.equal(buildCarrier(game, 0, home, "corvette").ok, false);
+  assert.equal(buildCarrier(game, 0, home, "corvette").ok, true);
   const frigate = game.carriers.find(carrier => carrier.type === "frigate")!;
   assert.equal(frigate.readyTurn, 2);
   assert.equal(frigate.cu, 0);

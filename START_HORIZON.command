@@ -6,5 +6,8 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 if [ ! -d node_modules ]; then npm install || exit 1; fi
 export HORIZON_STANDALONE=1
+node scripts/ensure-local-build.mjs || exit 1
+export HOST=127.0.0.1
+export PORT=3000
 node scripts/open-horizon-when-ready.mjs &
-npm run dev -- --host 127.0.0.1 --port 3000
+npm run start:self-hosted

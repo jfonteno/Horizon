@@ -30,14 +30,14 @@ test("0.20.0 supports four-Era and five-Era formats with dynamic Gate targets", 
   assert.equal(long.players.every((player) => player.eraTributes.length === 5), true);
 });
 
-test("the hazard-free Standard Board is a side-6 hex with 91 playable hexes and symmetric setup sets", () => {
+test("the hazard-free Standard Board is a side-5 hex with 61 playable hexes and symmetric setup sets", () => {
   const map = mapLibrary["standard-board"];
-  assert.equal(map.rows, 11);
-  assert.equal(map.columns, 11);
-  assert.equal(map.rows * map.columns - map.blocked.size, 91);
+  assert.equal(map.rows, 9);
+  assert.equal(map.columns, 9);
+  assert.equal(map.rows * map.columns - map.blocked.size, 61);
   assert.deepEqual(Object.keys(map.startsByPlayerCount || {}).sort(), ["4", "5", "6"]);
   const game = createGame(6, [...factions], "standard-board", "horizon-base", 20003);
-  assert.equal(game.hexes.filter((hex) => hex.kind !== "rift").length, 91);
+  assert.equal(game.hexes.filter((hex) => hex.kind !== "rift").length, 61);
   assert.equal(game.hexes.some((hex) => hex.kind === "hazard"), false);
   assert.equal(game.hexes.filter((hex) => hex.kind === "home").length, 6);
 });

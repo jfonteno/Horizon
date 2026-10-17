@@ -95,7 +95,30 @@ test("Ready locks faction selection and game start requires every human choice",
   });
   assert.equal(started.ok, true);
   assert.equal(started.session!.summary.status, "active");
-  assert.deepEqual(started.session!.game.players.map((player) => player.faction), ["farbound", "varkesh", "foundry", "aurelians"]);
+  const startedFactions = started.session!.game.players.map((player) => player.faction);
+  assert.deepEqual(startedFactions.slice(0, 2), ["farbound", "varkesh"]);
+  assert.equal(new Set(startedFactions).size, 4);
+  assert.ok(started.session!.summary.seats.slice(2).every((seat) => !seat.randomFaction && Boolean(seat.faction)));
+});
+
+test("host may assign a bot faction or leave it random until launch", async () => {
+  const { repository, service, game } = fixture();
+  const host = await service.create(game, "Host", "network");
+  assert.equal(host.summary.seats[2].randomFaction, true);
+  assert.equal(host.summary.seats[2].faction, null);
+  const assigned = await executeRoomCommand(repository, {
+    code: host.code, token: host.token, expectedRevision: host.revision,
+    commandId: "assign-bot-faction", command: { kind: "setBotFaction", playerId: 2, factionId: "meridian", random: false },
+  });
+  assert.equal(assigned.ok, true);
+  assert.equal(assigned.session!.summary.seats[2].faction, "meridian");
+  const randomized = await executeRoomCommand(repository, {
+    code: host.code, token: host.token, expectedRevision: assigned.session!.revision,
+    commandId: "randomize-bot-faction", command: { kind: "setBotFaction", playerId: 2, random: true },
+  });
+  assert.equal(randomized.ok, true);
+  assert.equal(randomized.session!.summary.seats[2].randomFaction, true);
+  assert.equal(randomized.session!.summary.seats[2].faction, null);
 });
 
 test("reopening a lobby seat releases its selected faction", async () => {

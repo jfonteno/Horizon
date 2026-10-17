@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "Horizon: Shattered Reach",
+  "short_name": "Horizon",
+  "description": "A persistent strategy game of exploration, diplomacy, Legacy, and the Horizon Gate.",
+  "start_url": "/?source=installed-app",
+  "scope": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#02080c",
+  "theme_color": "#061820",
+  "categories": ["games", "strategy"],
+  "icons": [
+    { "src": "/icons/horizon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/horizon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/horizon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/horizon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Create Game", "short_name": "Create", "url": "/?open=create" },
+    { "name": "Join by Code", "short_name": "Join", "url": "/?open=join" },
+    { "name": "Continue Game", "short_name": "Continue", "url": "/?open=continue" }
+  ]
+}

@@ -11,10 +11,11 @@ import type {
 } from "../types";
 import type { ThemeId } from "../themes";
 import { seededRandom, shuffle } from "./random";
-import { emptyLegacyMetrics } from "../rules/legacy";
+import { emptyLegacyMetrics, prepareHiddenChoicesForEra } from "../rules/legacy";
 import { recordGameSnapshot } from "../analytics";
 import type { GameFormatId } from "../rules/format";
 import { formatRules } from "../rules/format";
+import { eraPolicyChoices } from "../rules/policy-deck";
 
 export function createGame(
   playerCount: number,
@@ -34,10 +35,10 @@ export function createGame(
     throw new Error("One or more selected factions are not installed on this Horizon server.");
   const
     random = seededRandom(seed),
-    startingHexes = shuffle(
-      (map.startsByPlayerCount?.[playerCount] || map.starts.slice(0, playerCount)),
-      seededRandom((seed ^ 0x9e3779b9) >>> 0),
-    ),
+    startCandidates = map.startsByPlayerCount?.[playerCount] || map.starts.slice(0, playerCount),
+    startingHexes = map.randomizeStarts === false
+      ? [...startCandidates]
+      : shuffle(startCandidates, seededRandom((seed ^ 0x9e3779b9) >>> 0),),
     openCount = map.rows * map.columns - map.blocked.size - startingHexes.length;
   const pool = [...map.tilePool];
   while (pool.length < openCount) pool.push("empty");
@@ -76,7 +77,10 @@ export function createGame(
           id,
           row,
           col,
-          kind: ((mixed[position++] || "empty") === "hazard" ? "empty" : mixed[position - 1] || "empty") as HexKind,
+          kind: (() => {
+            const candidate = map.fixedTiles?.[id] || mixed[position++] || "empty";
+            return (candidate === "hazard" ? "empty" : candidate) as HexKind;
+          })(),
           revealed: false,
           centers: [],
           combat: 0,
@@ -111,7 +115,14 @@ export function createGame(
       tech: { Military: 1, Economy: 1, Policy: 1, Exploration: 1, Resource: 1 },
       explorationVessels: [],
       explorer: startingHexes[id],
-      colonyShip: startingHexes[id],
+      colonyShips: faction === "wayfarers" ? [] : [{
+        id: `colony-${id}-1`,
+        owner: id,
+        hex: startingHexes[id],
+        readyTurn: 1,
+        movesRemaining: 1,
+      }],
+      colonyShip: faction === "wayfarers" ? "" : startingHexes[id],
       modules: 1,
       disabled: false,
       objectives: [...definition.objectives],
@@ -140,6 +151,12 @@ export function createGame(
     definition.initialize?.(player);
     const homeCenter = starting?.homeCenter || (faction === "foundry" ? "material" : undefined);
     if (homeCenter) hexes.find((hex) => hex.id === startingHexes[id])!.centers.push(homeCenter);
+    if (faction === "guilds" && homeCenter) {
+      hexes.find((hex) => hex.id === startingHexes[id])!.enhancedCenterIndices = [0];
+      player.laborPenalty = 1;
+      player.laborCap = 2;
+      player.labor = 2;
+    }
     return player;
   });
   for (const player of players) {
@@ -149,7 +166,7 @@ export function createGame(
       type: "exploration",
       hex: startingHexes[player.id],
       readyTurn: 1,
-      movesRemaining: 1,
+      movesRemaining: player.tech.Exploration,
       publicRevealsTurn: 0,
       publicReveals: 0,
     };
@@ -158,14 +175,15 @@ export function createGame(
   const carriers: CarrierState[] = players.map((player) => ({
     id: `carrier-${player.id}-1`,
     owner: player.id,
-    type: "patrol",
+    type: player.faction === "salvo" ? "bombardFrigate" : "patrol",
     hex: startingHexes[player.id],
     cu: 2,
     readyTurn: 1,
-    movesRemaining: 2,
+    movesRemaining: (player.faction === "salvo" ? 3 : 2) + (player.tech.Military >= 4 ? 4 : player.tech.Military >= 3 ? 2 : player.tech.Military >= 2 ? 1 : 0),
   }));
   const game: GameState = {
-    schemaVersion: 15,
+    policyElection: { era: 1, choices: eraPolicyChoices(seed, 1), votes: [] },
+    schemaVersion: 21,
     format,
     mapId,
     contentPacks: [
@@ -180,6 +198,7 @@ export function createGame(
           }),
       ).values(),
     ],
+    enabledExpansions: (map.sourcePack === "shattered-reach-expansion" || players.some((player) => factionLibrary[player.faction].sourcePack === "shattered-reach-expansion")) ? ["shattered-reach-expansion"] : [],
     themeId,
     seed,
     players,
@@ -192,6 +211,15 @@ export function createGame(
     mode: "inspect",
     moves: { explorer: 1, colony: 1 },
     carriers,
+    mobileHabitats: players.filter((player) => player.faction === "wayfarers").map((player) => ({
+      id: `mobile-${player.id}-1`, owner: player.id, type: "arkship" as const,
+      hex: startingHexes[player.id], centers: [], caravanGuards: 0,
+      readyTurn: 1, movesRemaining: 1, deployed: true,
+    })),
+    blockades: [],
+    bombardmentDamage: {},
+    bombardmentsThisTurn: {},
+    bombardmentMarks: [],
     civilianUnits: [],
     selectedCarrierIds: [carriers[0].id],
     log: [
@@ -201,12 +229,16 @@ export function createGame(
     ],
     agreements: [],
     proposals: [],
+    brokerageOffers: [],
     pendingLabor: [],
     stationingPermissions: [],
     universalClaims: [],
     pendingCombatRedistributions: [],
     spectatorMode,
     history: [],
+    turnReplays: [],
+    secretHiddenScoring: true,
+    gateLedger: [],
     orderProtocol: {
       phase: spectatorMode ? "orders" : "negotiation",
       turn: 1,
@@ -217,6 +249,7 @@ export function createGame(
     botReports: [],
     botMemory: [],
   };
+  prepareHiddenChoicesForEra(game, 1);
   recordGameSnapshot(game, 0);
   return game;
 }

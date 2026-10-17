@@ -1,6 +1,6 @@
 # Horizon Content Packs
 
-Horizon 0.17 loads external maps, factions, and visual assets from versioned Content Packs. Packs are ordinary folders under `data/content` and require no application rebuild. The self-hosted server validates every pack during startup and rejects the entire pack if any declared file is unsafe, malformed, duplicated, or incompatible.
+Horizon 0.22 loads external maps, factions, visual assets, expansion catalog metadata, and future module identifiers from versioned Content Packs. Packs are ordinary folders under `data/content` and require no application rebuild. The self-hosted server validates every pack during startup and rejects the entire pack if any declared file is unsafe, malformed, duplicated, or incompatible.
 
 ## Install a pack
 
@@ -44,6 +44,16 @@ Every pack begins with `manifest.json`:
   "name": "My Expansion",
   "version": "1.0.0",
   "horizonVersion": "0.17",
+  "description": "A new region and civilization.",
+  "coverArt": "assets/cover.webp",
+  "modules": ["example-module"],
+  "dependencies": [{ "id": "horizon-core", "version": "1.0.0" }],
+  "storeProductIds": {
+    "steam": "example-steam-dlc",
+    "apple": "com.example.horizon.pack",
+    "google": "example_horizon_pack",
+    "web": "example-horizon-pack"
+  },
   "maps": ["maps/my-map.json"],
   "factions": ["factions/my-faction.json"]
 }

@@ -22,7 +22,7 @@ test("simultaneous Universal qualification remains unclaimed",()=>{
   assert.equal(game.universalClaims.length,0);
 });
 
-test("automatic Hidden Legacy scores only at Era scoring",()=>{
+test("automatic Hidden Legacy is banked privately at Era scoring",()=>{
   const game=legacyGame();
   drawHiddenChoices(game,0,1);
   const state=game.players[0].hiddenLegacy[1];
@@ -41,7 +41,8 @@ test("automatic Hidden Legacy scores only at Era scoring",()=>{
   scoreHiddenEra(game,1);
   assert.equal(state.scored,true);
   assert.equal(state.completed,true);
-  assert.equal(game.players[0].legacy.hidden,automatic.lp);
+  assert.equal(game.players[0].legacy.hidden,0);
+  assert.equal(state.bankedPoints,automatic.lp);
 });
 
 test("Gate failure causes collective defeat before LP comparison",()=>{

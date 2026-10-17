@@ -11,8 +11,9 @@ export const aurelians: FactionDefinition = {
     { name: "Diplomatic Foundation", summary: "Begin at Policy II with 3 Influence and an Influence-producing Homeworld." },
     { name: "Web of Relations", summary: "Gain 1 Influence the first time you establish a formal agreement with each other civilization." },
     { name: "Political Capital", unlock: "Policy II", summary: "Spend 2 Influence for 1 Material or Currency, or spend 4 Influence once per Era for 1 permanent Labor Capacity." },
-    { name: "Envoy", unlock: "Exploration II", summary: "Construct an Envoy that may enter a foreign Habitat with permission. A direct trade hosted there gives the Aurelians 1 Influence." },
+    { name: "Influence Exchange", unlock: "Policy II", summary: "Offer Influence in direct trades. Exchange 2 Influence for 1 Material, Currency, or Research at the System Market." },
+    { name: "Envoy", unlock: "Exploration II", summary: "Construct an Envoy that may enter a foreign Habitat with permission. Each completed direct trade with that civilization grants exactly 1 Influence, regardless of how many Envoys are hosted there." },
   ],
-  objectives: ["Foreign Service: Envoys with 2 rivals", "Diplomatic Web: 3 agreements", "Influence Network: 5 bonus Influence"],
+  objectives: ["Foreign Service: Envoys with 2 rivals", "Diplomatic Web: 3 agreements", "Influence Network: 5 bonus Influence", "Influence Broker: trade Influence with 3 rivals", "Political Exchange: spend 8 Influence at the Market"],
   initialize(player) { player.resources.influence = 3; player.tech.Policy = 2; },
 };

@@ -60,6 +60,6 @@ test("lower player counts shuffle only the currently assigned start hexes", () =
   const { starts } = assignment(17220, 4);
   assert.deepEqual(
     [...starts].sort(),
-    [...mapLibrary["shattered-reach"].starts.slice(0, 4)].sort(),
+    [...mapLibrary["shattered-reach"].startsByPlayerCount![4]!].sort(),
   );
 });

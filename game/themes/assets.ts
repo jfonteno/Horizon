@@ -26,6 +26,10 @@ export type ShipIconType =
   | CarrierType
   | CivilianUnitType
   | ExplorationShipIcon
+  | "arkship"
+  | "grandArk"
+  | "worldship"
+  | "blockade"
   | "colonyShip";
 
 export function explorationIcon(level: number): ExplorationShipIcon {

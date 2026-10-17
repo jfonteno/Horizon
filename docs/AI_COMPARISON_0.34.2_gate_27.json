@@ -1,0 +1,826 @@
+{
+  "firstSeed": 34522,
+  "lastSeed": 34548,
+  "results": {
+    "ai-easy": {
+      "games": 27,
+      "wins": 3,
+      "gateSurvival": 0.8518518518518519,
+      "averageLP": 11.15,
+      "averageClaims": 1.04,
+      "averageHidden": 1.48,
+      "failedSubmissions": 0,
+      "medianLP": 10,
+      "rangeLP": [
+        0,
+        26
+      ],
+      "samples": [
+        {
+          "seed": 34522,
+          "faction": "varkesh",
+          "lp": 22,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34523,
+          "faction": "helix",
+          "lp": 11,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34524,
+          "faction": "foundry",
+          "lp": 4,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34525,
+          "faction": "farbound",
+          "lp": 6,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34526,
+          "faction": "aurelians",
+          "lp": 13,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34527,
+          "faction": "meridian",
+          "lp": 10,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34528,
+          "faction": "spires",
+          "lp": 14,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34529,
+          "faction": "aegis",
+          "lp": 21,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34530,
+          "faction": "wayfarers",
+          "lp": 10,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34531,
+          "faction": "salvo",
+          "lp": 0,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34532,
+          "faction": "guilds",
+          "lp": 11,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34533,
+          "faction": "varkesh",
+          "lp": 10,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34534,
+          "faction": "helix",
+          "lp": 9,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34535,
+          "faction": "foundry",
+          "lp": 0,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34536,
+          "faction": "farbound",
+          "lp": 23,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34537,
+          "faction": "aurelians",
+          "lp": 5,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34538,
+          "faction": "meridian",
+          "lp": 10,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34539,
+          "faction": "spires",
+          "lp": 11,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34540,
+          "faction": "aegis",
+          "lp": 3,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34541,
+          "faction": "wayfarers",
+          "lp": 4,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34542,
+          "faction": "salvo",
+          "lp": 26,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34543,
+          "faction": "guilds",
+          "lp": 23,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34544,
+          "faction": "varkesh",
+          "lp": 15,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34545,
+          "faction": "helix",
+          "lp": 12,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34546,
+          "faction": "foundry",
+          "lp": 9,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34547,
+          "faction": "farbound",
+          "lp": 12,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34548,
+          "faction": "aurelians",
+          "lp": 7,
+          "win": false,
+          "gateSurvived": true
+        }
+      ]
+    },
+    "ai-medium": {
+      "games": 27,
+      "wins": 4,
+      "gateSurvival": 0.8888888888888888,
+      "averageLP": 12.56,
+      "averageClaims": 1.11,
+      "averageHidden": 1.74,
+      "failedSubmissions": 0,
+      "medianLP": 11,
+      "rangeLP": [
+        0,
+        29
+      ],
+      "samples": [
+        {
+          "seed": 34522,
+          "faction": "varkesh",
+          "lp": 19,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34523,
+          "faction": "helix",
+          "lp": 9,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34524,
+          "faction": "foundry",
+          "lp": 7,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34525,
+          "faction": "farbound",
+          "lp": 3,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34526,
+          "faction": "aurelians",
+          "lp": 6,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34527,
+          "faction": "meridian",
+          "lp": 10,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34528,
+          "faction": "spires",
+          "lp": 18,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34529,
+          "faction": "aegis",
+          "lp": 16,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34530,
+          "faction": "wayfarers",
+          "lp": 10,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34531,
+          "faction": "salvo",
+          "lp": 0,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34532,
+          "faction": "guilds",
+          "lp": 20,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34533,
+          "faction": "varkesh",
+          "lp": 12,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34534,
+          "faction": "helix",
+          "lp": 10,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34535,
+          "faction": "foundry",
+          "lp": 5,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34536,
+          "faction": "farbound",
+          "lp": 23,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34537,
+          "faction": "aurelians",
+          "lp": 9,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34538,
+          "faction": "meridian",
+          "lp": 10,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34539,
+          "faction": "spires",
+          "lp": 16,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34540,
+          "faction": "aegis",
+          "lp": 14,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34541,
+          "faction": "wayfarers",
+          "lp": 11,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34542,
+          "faction": "salvo",
+          "lp": 26,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34543,
+          "faction": "guilds",
+          "lp": 29,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34544,
+          "faction": "varkesh",
+          "lp": 22,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34545,
+          "faction": "helix",
+          "lp": 12,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34546,
+          "faction": "foundry",
+          "lp": 6,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34547,
+          "faction": "farbound",
+          "lp": 12,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34548,
+          "faction": "aurelians",
+          "lp": 4,
+          "win": false,
+          "gateSurvived": true
+        }
+      ]
+    },
+    "ai-hard": {
+      "games": 27,
+      "wins": 3,
+      "gateSurvival": 0.8888888888888888,
+      "averageLP": 13.67,
+      "averageClaims": 1.15,
+      "averageHidden": 1.93,
+      "failedSubmissions": 0,
+      "medianLP": 14,
+      "rangeLP": [
+        0,
+        29
+      ],
+      "samples": [
+        {
+          "seed": 34522,
+          "faction": "varkesh",
+          "lp": 19,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34523,
+          "faction": "helix",
+          "lp": 14,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34524,
+          "faction": "foundry",
+          "lp": 7,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34525,
+          "faction": "farbound",
+          "lp": 6,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34526,
+          "faction": "aurelians",
+          "lp": 6,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34527,
+          "faction": "meridian",
+          "lp": 9,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34528,
+          "faction": "spires",
+          "lp": 14,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34529,
+          "faction": "aegis",
+          "lp": 16,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34530,
+          "faction": "wayfarers",
+          "lp": 10,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34531,
+          "faction": "salvo",
+          "lp": 0,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34532,
+          "faction": "guilds",
+          "lp": 17,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34533,
+          "faction": "varkesh",
+          "lp": 18,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34534,
+          "faction": "helix",
+          "lp": 20,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34535,
+          "faction": "foundry",
+          "lp": 5,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34536,
+          "faction": "farbound",
+          "lp": 23,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34537,
+          "faction": "aurelians",
+          "lp": 9,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34538,
+          "faction": "meridian",
+          "lp": 13,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34539,
+          "faction": "spires",
+          "lp": 28,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34540,
+          "faction": "aegis",
+          "lp": 14,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34541,
+          "faction": "wayfarers",
+          "lp": 11,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34542,
+          "faction": "salvo",
+          "lp": 18,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34543,
+          "faction": "guilds",
+          "lp": 29,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34544,
+          "faction": "varkesh",
+          "lp": 22,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34545,
+          "faction": "helix",
+          "lp": 19,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34546,
+          "faction": "foundry",
+          "lp": 6,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34547,
+          "faction": "farbound",
+          "lp": 12,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34548,
+          "faction": "aurelians",
+          "lp": 4,
+          "win": false,
+          "gateSurvived": true
+        }
+      ]
+    },
+    "ai-emperor": {
+      "games": 27,
+      "wins": 5,
+      "gateSurvival": 0.8888888888888888,
+      "averageLP": 14.44,
+      "averageClaims": 1.3,
+      "averageHidden": 1.96,
+      "failedSubmissions": 0,
+      "medianLP": 14,
+      "rangeLP": [
+        0,
+        29
+      ],
+      "samples": [
+        {
+          "seed": 34522,
+          "faction": "varkesh",
+          "lp": 19,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34523,
+          "faction": "helix",
+          "lp": 27,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34524,
+          "faction": "foundry",
+          "lp": 7,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34525,
+          "faction": "farbound",
+          "lp": 6,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34526,
+          "faction": "aurelians",
+          "lp": 6,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34527,
+          "faction": "meridian",
+          "lp": 4,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34528,
+          "faction": "spires",
+          "lp": 14,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34529,
+          "faction": "aegis",
+          "lp": 16,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34530,
+          "faction": "wayfarers",
+          "lp": 10,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34531,
+          "faction": "salvo",
+          "lp": 0,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34532,
+          "faction": "guilds",
+          "lp": 17,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34533,
+          "faction": "varkesh",
+          "lp": 18,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34534,
+          "faction": "helix",
+          "lp": 20,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34535,
+          "faction": "foundry",
+          "lp": 5,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34536,
+          "faction": "farbound",
+          "lp": 23,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34537,
+          "faction": "aurelians",
+          "lp": 9,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34538,
+          "faction": "meridian",
+          "lp": 13,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34539,
+          "faction": "spires",
+          "lp": 28,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34540,
+          "faction": "aegis",
+          "lp": 14,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34541,
+          "faction": "wayfarers",
+          "lp": 11,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34542,
+          "faction": "salvo",
+          "lp": 26,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34543,
+          "faction": "guilds",
+          "lp": 29,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34544,
+          "faction": "varkesh",
+          "lp": 22,
+          "win": true,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34545,
+          "faction": "helix",
+          "lp": 19,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34546,
+          "faction": "foundry",
+          "lp": 6,
+          "win": false,
+          "gateSurvived": false
+        },
+        {
+          "seed": 34547,
+          "faction": "farbound",
+          "lp": 12,
+          "win": false,
+          "gateSurvived": true
+        },
+        {
+          "seed": 34548,
+          "faction": "aurelians",
+          "lp": 9,
+          "win": false,
+          "gateSurvived": true
+        }
+      ]
+    }
+  }
+}

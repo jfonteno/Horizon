@@ -5,8 +5,13 @@ import { helix } from "./helix";
 import { meridian } from "./meridian";
 import type { FactionDefinition, FactionId } from "./types";
 import { varkesh } from "./varkesh";
+import { spires } from "./spires";
+import { aegis } from "./aegis";
+import { wayfarers } from "./wayfarers";
+import { salvo } from "./salvo";
+import { guilds } from "./guilds";
 
-export const factionLibrary: Record<FactionId, FactionDefinition> = { varkesh, helix, foundry, aurelians, meridian, farbound };
+export const factionLibrary: Record<FactionId, FactionDefinition> = { varkesh, helix, foundry, aurelians, meridian, farbound, spires, aegis, wayfarers, salvo, guilds };
 export const factionIds = Object.keys(factionLibrary) as FactionId[];
 const coreFactionIds = new Set(factionIds);
 

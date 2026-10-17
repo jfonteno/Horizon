@@ -1,0 +1,6 @@
+{
+  "ai-easy": { "games": 22, "wins": 3, "gateSurvival": 0.6363636363636364, "averageLP": 11.27, "averageClaims": 1.18, "averageHidden": 1.41, "failedSubmissions": 0 },
+  "ai-medium": { "games": 22, "wins": 3, "gateSurvival": 0.7727272727272727, "averageLP": 11.36, "averageClaims": 1.05, "averageHidden": 1.55, "failedSubmissions": 0 },
+  "ai-hard": { "games": 22, "wins": 2, "gateSurvival": 0.7727272727272727, "averageLP": 12, "averageClaims": 1.05, "averageHidden": 1.68, "failedSubmissions": 0 },
+  "ai-emperor": { "games": 22, "wins": 4, "gateSurvival": 0.8181818181818182, "averageLP": 12.77, "averageClaims": 1.05, "averageHidden": 1.82, "failedSubmissions": 0 }
+}

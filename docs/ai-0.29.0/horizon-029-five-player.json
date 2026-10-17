@@ -1,0 +1,229 @@
+{
+  "profile": "Strategic Director",
+  "mapId": "standard-board",
+  "playerCount": 5,
+  "games": 1,
+  "gateSuccessRate": 0,
+  "averageGateTributes": 10,
+  "averageLPPerCivilization": 7.6,
+  "averageFinalResourcesPerCivilization": 19.8,
+  "averageHabitatsPerCivilization": 2,
+  "averageAcceptedTradesPerGame": 20,
+  "averageTechnologyTotalPerCivilization": 6.2,
+  "averageMilitaryCSPerCivilization": 6.8,
+  "contributionStandardDeviation": 0.6324555320336759,
+  "hiddenObjectiveCompletionRate": 0.2,
+  "civilizationClaimsPerCivilization": 0.4,
+  "universalClaimsPerCivilization": 0.8,
+  "contributionEraRate": 0.5,
+  "averageCounteroffersPerGame": 0,
+  "failedSubmissionRate": 0,
+  "averageGoalsTrackedPerDecision": 6,
+  "averageOrdersPerTurn": 2.55,
+  "averageCandidatesPerRecordedDecision": 14.3875,
+  "averageSearchNodesPerRecordedDecision": 53.475,
+  "averageTributesByFaction": {
+    "varkesh": 2,
+    "helix": 1,
+    "foundry": 2,
+    "farbound": 3,
+    "aurelians": 2,
+    "meridian": 0
+  },
+  "averageLPByFaction": {
+    "varkesh": 7,
+    "helix": 6,
+    "foundry": 4,
+    "farbound": 12,
+    "aurelians": 9,
+    "meridian": 0
+  },
+  "hiddenByObjective": {
+    "h1-mobilization": {
+      "selected": 1,
+      "completed": 1
+    },
+    "h2-burden": {
+      "selected": 2,
+      "completed": 0
+    },
+    "h3-peace": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h4-savior": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h1-renaissance": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h3-leadership": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h4-economy": {
+      "selected": 1,
+      "completed": 1
+    },
+    "h1-frontier": {
+      "selected": 2,
+      "completed": 1
+    },
+    "h2-colonial": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h3-mobilization": {
+      "selected": 2,
+      "completed": 1
+    },
+    "h4-arsenal": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h2-commerce": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h3-broker": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h4-complete": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h1-merchant": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h2-arms": {
+      "selected": 1,
+      "completed": 0
+    },
+    "h4-science": {
+      "selected": 1,
+      "completed": 0
+    }
+  },
+  "hiddenOrderKinds": {
+    "h1-mobilization": {
+      "tribute": 1,
+      "explorerMove": 4,
+      "colonyMove": 2,
+      "carrierMove": 4,
+      "establish": 1,
+      "construct": 1
+    },
+    "h1-renaissance": {
+      "explorerMove": 4,
+      "colonyMove": 3,
+      "carrierMove": 3
+    },
+    "h1-frontier": {
+      "explorerMove": 8,
+      "tribute": 1,
+      "colonyMove": 5,
+      "carrierMove": 6,
+      "construct": 2,
+      "establish": 1
+    },
+    "h1-merchant": {
+      "explorerMove": 4,
+      "tribute": 1,
+      "colonyMove": 2,
+      "carrierMove": 3,
+      "establish": 1
+    },
+    "h2-burden": {
+      "explorerMove": 8,
+      "carrierMove": 12,
+      "colonyMove": 4
+    },
+    "h2-colonial": {
+      "colonyMove": 1,
+      "explorerMove": 4,
+      "carrierMove": 4,
+      "tribute": 1,
+      "construct": 1
+    },
+    "h2-commerce": {
+      "tribute": 1,
+      "colonyMove": 2,
+      "explorerMove": 4,
+      "carrierMove": 4,
+      "establish": 1,
+      "construct": 1
+    },
+    "h2-arms": {
+      "colonyMove": 1,
+      "construct": 3,
+      "explorerMove": 4,
+      "carrierMove": 4,
+      "tribute": 1
+    },
+    "h3-peace": {
+      "tribute": 1,
+      "carrierMove": 8,
+      "explorerMove": 4,
+      "construct": 1
+    },
+    "h3-leadership": {
+      "colonyMove": 3,
+      "explorerMove": 4,
+      "carrierMove": 4,
+      "establish": 1,
+      "tribute": 1,
+      "technology": 1
+    },
+    "h3-mobilization": {
+      "carrierMove": 8,
+      "explorerMove": 5,
+      "construct": 3,
+      "tribute": 1
+    },
+    "h3-broker": {
+      "tribute": 1,
+      "explorerMove": 4,
+      "carrierMove": 4,
+      "technology": 1
+    },
+    "h4-savior": {
+      "explorerMove": 1,
+      "carrierMove": 8,
+      "construct": 2
+    },
+    "h4-economy": {
+      "explorerMove": 1,
+      "carrierMove": 4,
+      "technology": 1
+    },
+    "h4-arsenal": {
+      "carrierMove": 4
+    },
+    "h4-complete": {
+      "explorerMove": 1,
+      "carrierMove": 4
+    },
+    "h4-science": {
+      "explorerMove": 1,
+      "carrierMove": 4
+    }
+  },
+  "civilizationClaimsByObjective": {
+    "b-survey": 1,
+    "a-web": 1
+  },
+  "wins": {
+    "varkesh": 0,
+    "helix": 0,
+    "foundry": 0,
+    "farbound": 0,
+    "aurelians": 0,
+    "meridian": 0
+  },
+  "elapsedMs": 12302,
+  "gamesPerSecond": 0.1
+}

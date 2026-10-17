@@ -10,6 +10,10 @@ export type ContentPackManifest = {
   version: string;
   horizonVersion: "0.17";
   description?: string;
+  coverArt?: string;
+  modules?: string[];
+  dependencies?: { id: string; version: string }[];
+  storeProductIds?: Partial<Record<"steam" | "apple" | "google" | "web", string>>;
   maps?: string[];
   factions?: string[];
 };
@@ -20,6 +24,10 @@ export type ContentPackSummary = Pick<
 > & {
   maps: string[];
   factions: string[];
+  coverArt?: string;
+  modules?: string[];
+  dependencies?: { id: string; version: string }[];
+  storeProductIds?: ContentPackManifest["storeProductIds"];
 };
 
 export type ContentIssue = {

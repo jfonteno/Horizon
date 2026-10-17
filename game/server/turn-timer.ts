@@ -1,5 +1,5 @@
 import { redistributeCombatUnits, removeCapturedCenter } from "../rules/fleet";
-import { beginSecretOrders, resolveSecretOrders } from "../rules/orders";
+import { beginSecretOrders, resolveSecretOrders, submitSecretOrders } from "../rules/orders";
 import { appendSystemAudit } from "./audit";
 import { runPendingBotSeats } from "./bot-seats";
 import type { RoomRepository, StoredRoom } from "./types";
@@ -39,7 +39,18 @@ function addAutomaticHolds(room: StoredRoom, now: string) {
   const missing = room.game.players.filter((player) =>
     !room.game.orderProtocol.submissions.some((submission) => submission.playerId === player.id),
   );
+  const draftedPlayerIds: number[] = [];
   for (const player of missing) {
+    const draft = room.drafts.find((candidate) => candidate.playerId === player.id && candidate.turn === room.game.turn);
+    if (draft?.orders.length) {
+      room.game.orderProtocol.phase = "orders";
+      room.game.orderProtocol.currentPlayer = player.id;
+      const submitted = submitSecretOrders(room.game, player.id, structuredClone(draft.orders));
+      if (submitted.ok) {
+        draftedPlayerIds.push(player.id);
+        continue;
+      }
+    }
     room.game.orderProtocol.submissions.push({
       playerId: player.id,
       turn: room.game.turn,
@@ -48,7 +59,7 @@ function addAutomaticHolds(room: StoredRoom, now: string) {
     });
   }
   room.game.orderProtocol.phase = "ready";
-  return missing.map((player) => player.id);
+  return { heldPlayerIds: missing.map((player) => player.id).filter((id) => !draftedPlayerIds.includes(id)), draftedPlayerIds };
 }
 
 export async function reconcileExpiredTurnTimer(
@@ -62,12 +73,16 @@ export async function reconcileExpiredTurnTimer(
   if (Date.parse(room.turnDeadlineAt) > nowMs)
     return false;
   if (room.game.orderProtocol.phase === "negotiation") beginSecretOrders(room.game);
-  if (room.game.orderProtocol.phase !== "orders") return false;
+  if (!["orders", "ready"].includes(room.game.orderProtocol.phase)) return false;
 
   const expectedRevision = room.revision;
   const now = new Date(nowMs).toISOString();
-  runPendingBotSeats(room.game);
-  const heldPlayerIds = addAutomaticHolds(room, now);
+  let heldPlayerIds: number[] = [];
+  let draftedPlayerIds: number[] = [];
+  if (room.game.orderProtocol.phase === "orders") {
+    runPendingBotSeats(room.game);
+    ({ heldPlayerIds, draftedPlayerIds } = addAutomaticHolds(room, now));
+  }
   const resolution = resolveSecretOrders(room.game);
   if (!resolution.ok) throw new Error(`Turn timer resolution failed: ${resolution.message}`);
   while (room.game.pendingCenterLoss && room.game.players[room.game.pendingCenterLoss.playerId].controller.kind === "bot") {
@@ -82,6 +97,7 @@ export async function reconcileExpiredTurnTimer(
   }
 
   room.revision++;
+  room.drafts = room.drafts.filter((draft) => draft.turn >= room.game.turn);
   room.status = room.game.result ? "complete" : "active";
   room.updatedAt = now;
   const heldNames = heldPlayerIds.map((id) => room.game.players[id]?.name || `Seat ${id + 1}`);
@@ -91,12 +107,19 @@ export async function reconcileExpiredTurnTimer(
     revision: room.revision,
     type: "phase",
     message: heldNames.length
-      ? `Turn timer expired. Automatic Hold was issued for ${heldNames.join(", ")}, then all sealed Orders resolved.`
-      : "Turn timer expired and all sealed Orders resolved.",
+      ? `Turn timer expired. Saved drafts were submitted for ${draftedPlayerIds.length} civilization${draftedPlayerIds.length === 1 ? "" : "s"}; automatic Hold was issued for ${heldNames.join(", ")}.`
+      : draftedPlayerIds.length
+        ? `Turn timer expired. ${draftedPlayerIds.length} saved private draft${draftedPlayerIds.length === 1 ? " was" : "s were"} submitted and the Turn resolved.`
+        : "Turn timer expired and all sealed Orders resolved.",
   });
   room.events = room.events.slice(-200);
   if (room.game.result) clearTurnDeadline(room);
   else startTurnDeadline(room, nowMs);
-  await appendSystemAudit(room, `timer-${room.revision}-${nowMs}`, "turnTimerExpired", "Resolve expired Turn timer", { kind: "turnTimerExpired", heldPlayerIds });
+  // Keep the persisted form identical to the audited form. Bot diplomacy can
+  // create a trade during timer resolution without the migration default.
+  room.game.proposals = room.game.proposals.map((proposal) => proposal.kind === "trade"
+    ? { ...proposal, counterDepth: proposal.counterDepth ?? 0 }
+    : proposal);
+  await appendSystemAudit(room, `timer-${room.revision}-${nowMs}`, "turnTimerExpired", "Resolve expired Turn timer", { kind: "turnTimerExpired", heldPlayerIds, draftedPlayerIds });
   return repository.compareAndSwap(room, expectedRevision);
 }

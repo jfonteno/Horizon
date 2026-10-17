@@ -11,6 +11,8 @@ import {
   submitSecretOrders,
 } from "../game/index";
 import type { GameState, SecretOrder } from "../game/index";
+import { getNeighbors } from "../game/engine/geometry";
+import { mapLibrary } from "../game/maps";
 
 const factions = ["varkesh", "helix", "foundry", "farbound"] as const;
 
@@ -96,10 +98,7 @@ test("secret Orders do not change state before every civilization seals", () => 
   const state = game(9001),
     origin = state.players[0].explorer,
     target = state.hexes.find(
-      (hex) =>
-        hex.kind !== "rift" &&
-        Math.abs(hex.row - state.hexes.find((h) => h.id === origin)!.row) <= 1 &&
-        hex.id !== origin,
+      (hex) => hex.kind !== "rift" && getNeighbors(origin, mapLibrary[state.mapId]).includes(hex.id),
     )!;
   beginSecretOrders(state);
   assert.equal(
@@ -210,6 +209,7 @@ test("Hidden Legacy remains unscored until Era-end resolution", () => {
   assert.equal(player.legacy.hidden, 0);
   assert.equal(player.hiddenLegacy[1].scored, undefined);
   resolveSecretOrders(state);
-  assert.equal(player.legacy.hidden, 4);
+  assert.equal(player.legacy.hidden, 0);
+  assert.equal(player.hiddenLegacy[1].bankedPoints, 4);
   assert.equal(player.hiddenLegacy[1].scored, true);
 });

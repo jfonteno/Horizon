@@ -99,7 +99,7 @@ export default function FactionOperations({
                 ? "Privately survey the Reach, settle efficiently, and sell verified intelligence."
                 : "Your primary faction systems operate automatically."}
       </p>
-      {(p.faction === "varkesh" || p.faction === "farbound") && <div className="faction-unit-build"><b>Next Homeworld production</b><small>Choose before the next Production Phase.</small>{(p.faction === "varkesh" ? ["material", "currency"] as const : ["research", "currency"] as const).map((resource) => <button key={resource} onClick={() => run((g) => setHomeProductionChoice(g, p.id, resource))}>{p.homeProductionChoice === resource ? `Selected: ${resource}` : `Choose ${resource}`}</button>)}</div>}
+      {(p.faction === "varkesh" || p.faction === "farbound" || p.faction === "helix") && <div className="faction-unit-build"><b>{p.faction === "helix" ? "Research Reallocation" : "Next Homeworld production"}</b><small>Choose before the next Production Phase. The choice replaces normal output.</small>{(p.faction === "varkesh" ? ["material", "currency"] as const : p.faction === "helix" ? ["research", "material", "currency"] as const : ["research", "currency"] as const).map((resource) => <button key={resource} onClick={() => run((g) => setHomeProductionChoice(g, p.id, resource))}>{(p.homeProductionChoice || (p.faction === "varkesh" ? "material" : "research")) === resource ? `Selected: ${resource}` : `Choose ${resource}`}</button>)}</div>}
       {available && !negotiationOnly && (
         <div className="faction-unit-build">
           <ShipIcon type={available} color={p.color} title={civilianLibrary[available].name} />

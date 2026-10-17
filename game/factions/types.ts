@@ -1,7 +1,7 @@
 import type { CenterType, PlayerState, Resource, TechnologyBranch } from "../types";
 
 export type FactionId = string;
-export type CoreFactionRules = "standard" | "varkesh" | "helix" | "foundry" | "aurelians" | "meridian" | "farbound";
+export type CoreFactionRules = "standard" | "varkesh" | "helix" | "foundry" | "aurelians" | "meridian" | "farbound" | "spires" | "aegis" | "wayfarers" | "salvo" | "guilds";
 
 export type FactionStartingPackage = {
   resources?: Partial<Record<Resource, number>>;
@@ -23,7 +23,7 @@ export type FactionDefinition = {
     unlock?: string;
   }>;
   homeProduction: Resource;
-  objectives: [string, string, string];
+  objectives: string[];
   starting?: FactionStartingPackage;
   rulesProfile?: CoreFactionRules;
   logo?: string;

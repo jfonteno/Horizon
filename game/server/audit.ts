@@ -1,5 +1,6 @@
 import type { RoomCommand } from "./command";
 import { roomCommandLabel } from "./command";
+import { normalizeStoredRoom } from "./rooms";
 import type { RoomAuditEntry, StoredRoom } from "./types";
 
 function canonical(value: unknown): string {
@@ -16,6 +17,9 @@ export async function sha256(value: unknown) {
 }
 
 function auditState(room: StoredRoom) {
+  // Disk and memory repositories normalize before persisting. Hash precisely
+  // that representation, including defaults added by save migrations.
+  room = normalizeStoredRoom(structuredClone(room));
   return {
     code: room.code,
     status: room.status,

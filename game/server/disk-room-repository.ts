@@ -1,7 +1,8 @@
-import { mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, stat, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { normalizeStoredRoom } from "./rooms";
 import type { RoomRepository, StoredRoom } from "./types";
+import { replaceRoomFile } from "./atomic-room-save";
 
 const ROOM_FILE = /^[A-Z2-9]{6}$/;
 
@@ -23,7 +24,7 @@ export class DiskRoomRepository implements RoomRepository {
   private queues = new Map<string, Promise<unknown>>();
   readonly directory: string;
 
-  constructor(directory: string) {
+  constructor(directory: string, private readonly replaceFile = replaceRoomFile) {
     this.directory = resolve(directory);
   }
 
@@ -72,16 +73,16 @@ export class DiskRoomRepository implements RoomRepository {
       await handle.close();
     }
     try {
-      await rename(temporary, target);
+      await this.replaceFile(temporary, target);
     } catch (error) {
       await unlink(temporary).catch(() => undefined);
-      throw error;
+      throw new Error(`Could not save room ${room.code}. The previous save has not been replaced. Close any duplicate Horizon server or program holding the room file, then refresh and retry. Storage error: ${(error as NodeJS.ErrnoException).code || "unknown"}.`, { cause: error });
     }
   }
 
   async get(code: string) {
     await this.initialize();
-    return this.readUnlocked(code);
+    return this.exclusive(code, () => this.readUnlocked(code));
   }
 
   async put(room: StoredRoom) {
@@ -95,6 +96,37 @@ export class DiskRoomRepository implements RoomRepository {
       await this.writeUnlocked(room);
       return true;
     });
+  }
+
+  async delete(code: string, expectedRevision: number) {
+    return this.exclusive(code, async () => {
+      const current = await this.readUnlocked(code);
+      if (!current || current.revision !== expectedRevision) return false;
+      await unlink(this.path(code));
+      return true;
+    });
+  }
+
+  async findByAccount(accountId: string) {
+    await this.initialize();
+    const files = await readdir(this.directory);
+    const rooms: StoredRoom[] = [];
+    for (const file of files.filter((name) => /^[A-Z2-9]{6}\.json$/.test(name))) {
+      const room = await this.get(file.slice(0, 6));
+      if (room && (room.hostAccountId === accountId || room.seats.some((seat) => seat.accountId === accountId))) rooms.push(room);
+    }
+    return rooms;
+  }
+
+  async list() {
+    await this.initialize();
+    const files = await readdir(this.directory);
+    const rooms: StoredRoom[] = [];
+    for (const file of files.filter((name) => /^[A-Z2-9]{6}\.json$/.test(name))) {
+      const room = await this.get(file.slice(0, 6));
+      if (room) rooms.push(room);
+    }
+    return rooms;
   }
 
   async health() {

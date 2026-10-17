@@ -38,7 +38,7 @@ test("an external content pack installs a playable map and faction", async (cont
     "horizon-base",
     1700,
   );
-  assert.equal(game.schemaVersion, 15);
+  assert.equal(game.schemaVersion, 21);
   assert.deepEqual(game.contentPacks, [{ id: "frontier-example", version: "1.0.0" }]);
   assert.equal(game.players[0].resources.influence, 2);
   assert.equal(game.players[0].tech.Policy, 2);

@@ -10,7 +10,7 @@ COPY . .
 ENV HORIZON_STANDALONE=1
 RUN npm run build:self-hosted
 
-RUN mkdir -p /data/rooms && chown -R node:node /data
+RUN mkdir -p /data/rooms /data/content /data/accounts && chown -R node:node /data
 
 USER node
 
@@ -18,7 +18,9 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
     HORIZON_DATA_DIR=/data/rooms \
-    HORIZON_CONTENT_DIR=/data/content
+    HORIZON_CONTENT_DIR=/data/content \
+    HORIZON_ACCOUNT_DIR=/data/accounts \
+    HORIZON_OPERATIONS_PATH=/data/operations/settings.json
 
 EXPOSE 3000
 

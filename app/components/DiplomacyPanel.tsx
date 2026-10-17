@@ -46,11 +46,11 @@ function proposalId() {
 }
 
 function cloneBundle(bundle: TradeBundle): TradeBundle {
-  return { material: bundle.material, currency: bundle.currency, research: bundle.research, labor: bundle.labor };
+  return { material: bundle.material, currency: bundle.currency, research: bundle.research, labor: bundle.labor, influence: bundle.influence || 0 };
 }
 
 function describeBundle(bundle: TradeBundle) {
-  const items = tradeResources.filter(resource => bundle[resource] > 0).map(resource => `${bundle[resource]} ${resource}`);
+  const items = [...tradeResources.filter(resource => bundle[resource] > 0).map(resource => `${bundle[resource]} ${resource}`), ...(bundle.influence ? [`${bundle.influence} influence`] : [])];
   return items.length ? items.join(", ") : "nothing";
 }
 
@@ -144,8 +144,8 @@ export default function DiplomacyPanel({ game, commit, flash, review }: Props) {
 
       <div className="diplomacy-grid">
         <article className="diplomacy-card trade-card">
-          <div className="card-title"><div><span>NEGOTIATED EXCHANGE</span><h2>Direct Trade</h2></div><small>Influence is not tradable</small></div>
-          <div className="trade-table"><div className="trade-head"><span>Resource</span><span>You give</span><span>You request</span></div>{tradeResources.map(resource => <label className="trade-row" key={resource}><b>{resource}</b><input aria-label={`Offer ${resource}`} type="number" min="0" max="99" value={offer[resource]} onChange={event => setBundle("offer", resource, event.target.value)}/><input aria-label={`Request ${resource}`} type="number" min="0" max="99" value={request[resource]} onChange={event => setBundle("request", resource, event.target.value)}/></label>)}</div>
+          <div className="card-title"><div><span>NEGOTIATED EXCHANGE</span><h2>Direct Trade</h2></div><small>Aurelians at Policy II may offer Influence</small></div>
+          <div className="trade-table"><div className="trade-head"><span>Resource</span><span>You give</span><span>You request</span></div>{tradeResources.map(resource => <label className="trade-row" key={resource}><b>{resource}</b><input aria-label={`Offer ${resource}`} type="number" min="0" max="99" value={offer[resource]} onChange={event => setBundle("offer", resource, event.target.value)}/><input aria-label={`Request ${resource}`} type="number" min="0" max="99" value={request[resource]} onChange={event => setBundle("request", resource, event.target.value)}/></label>)}{(player.faction === "aurelians" && player.tech.Policy >= 2 || target.faction === "aurelians" && target.tech.Policy >= 2) && <label className="trade-row"><b>influence</b><input aria-label="Offer influence" type="number" min="0" max="99" disabled={player.faction !== "aurelians" || player.tech.Policy < 2} value={offer.influence || 0} onChange={event => setOffer({ ...offer, influence: Math.max(0, Math.min(99, Math.trunc(Number(event.target.value) || 0))) })}/><input aria-label="Request influence" type="number" min="0" max="99" disabled={target.faction !== "aurelians" || target.tech.Policy < 2} value={request.influence || 0} onChange={event => setRequest({ ...request, influence: Math.max(0, Math.min(99, Math.trunc(Number(event.target.value) || 0))) })}/></label>}</div>
           <p className="rule-note">Labor permanently transfers Capacity at the start of the next Turn and requires a Trade Agreement or Alliance.</p>
           <button className="primary wide" disabled={!eligibility.ok} onClick={proposeTrade}>Send private proposal</button>
         </article>
