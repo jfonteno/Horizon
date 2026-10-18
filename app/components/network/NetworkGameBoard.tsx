@@ -46,6 +46,7 @@ import NetworkResourcesPanel from "./NetworkResourcesPanel";
 import NetworkGatePanel from "./NetworkGatePanel";
 import NetworkLegacyPanel from "./NetworkLegacyPanel";
 import NetworkMilitaryPanel from "./NetworkMilitaryPanel";
+import { hasStationingPermission } from "../../../game/rules/diplomacy";
 import RoomLobby from "./RoomLobby";
 import RoomStatus from "./RoomStatus";
 import CommandIcon from "./CommandIcon";
@@ -66,11 +67,8 @@ import ShatteredReachPanel from "../ShatteredReachPanel";
 import GameplayAudio from "./GameplayAudio";
 import { ResourceGlyph } from "./ResourceGlyph";
 import { uncommandedUnits, type UncommandedUnit } from "../../../game/rules/uncommanded-units";
-import { portalNeighbors } from "../../../game/rules/portals";
 import { combatHexesFromReplays } from "../../lib/combat-hexes";
-import { routeUsesPortal } from "../../lib/route-steps";
-import { validateExplorationPath } from "../../../game/rules/exploration";
-import { validateCarrierRoute } from "../../../game/rules/fleet";
+import { movementTargets } from "../../lib/movement-targets";
 
 type Panel =
   | "map"
@@ -279,7 +277,6 @@ export default function NetworkGameBoard({
   const [selectedReachAssetId, setSelectedReachAssetId] = useState<string | null>(null);
   const [migrationMobileId, setMigrationMobileId] = useState<string | null>(null);
   const [unitIntent, setUnitIntent] = useState<UnitIntent>(null);
-  const [routeSteps, setRouteSteps] = useState<string[]>([]);
   const [taskForceIds, setTaskForceIds] = useState<string[]>([]);
   const [militaryTargeting, setMilitaryTargeting] = useState(false);
   const [bombardCarrierId, setBombardCarrierId] = useState<string | null>(null);
@@ -329,7 +326,6 @@ export default function NetworkGameBoard({
     setBombardCarrierId(null);
     setBombardStrength(1);
     setUnitIntent(null);
-    setRouteSteps([]);
     setBuildTargeting(false);
     setBuildHexId(null);
     setDraftNotice(
@@ -421,20 +417,17 @@ export default function NetworkGameBoard({
   );
   // Room updates can remove a selected vessel while this component is mounted.
   const completeFleetSelection = taskForceIds.length > 0 && selectedFleet.length === taskForceIds.length;
-  const militaryOrigin = completeFleetSelection ? selectedFleet[0].hex : undefined;
-  const militaryMovement = completeFleetSelection
+  const readyFleet = completeFleetSelection && selectedFleet.every((carrier) =>
+    carrier.hex === selectedFleet[0].hex && carrier.readyTurn <= game.turn && carrier.cu > 0);
+  const militaryOrigin = readyFleet ? selectedFleet[0].hex : undefined;
+  const militaryMovement = readyFleet
     ? Math.min(...selectedFleet.map((carrier) => carrier.movesRemaining))
     : 0;
-  const militaryRouteHead = routeSteps.at(-1) || militaryOrigin;
-  const militaryPortalUsed = routeUsesPortal(militaryOrigin, routeSteps, map);
-  const militaryTargets =
-    militaryTargeting && militaryOrigin && militaryRouteHead && routeSteps.length < militaryMovement
-      ? [...new Set([...getNeighbors(militaryRouteHead, map), ...(!militaryPortalUsed && playerId !== undefined &&
-          !taskForceIds.some((carrierId) => game.carriers.find((carrier) => carrier.id === carrierId)?.portalUsedTurn === game.turn)
-          ? portalNeighbors(game, playerId, militaryRouteHead) : [])])].filter((id) =>
-          id !== militaryOrigin && !routeSteps.includes(id) &&
-          game.hexes.some((hex) => hex.id === id && hex.revealed && hex.kind !== "rift"))
-      : [];
+  const militaryPaths = militaryTargeting && militaryOrigin && playerId !== undefined
+    ? movementTargets(game, playerId, militaryOrigin, militaryMovement, "military",
+        selectedFleet.some((carrier) => carrier.portalUsedTurn === game.turn))
+    : new Map<string, string[]>();
+  const militaryTargets = [...militaryPaths.keys()];
   const selectedExplorer =
     mapUnit?.kind === "explorer"
       ? player?.explorationVessels.find((unit) => unit.id === mapUnit.id) ||
@@ -444,6 +437,9 @@ export default function NetworkGameBoard({
     mapUnit?.kind === "colony"
       ? player?.colonyShips.find((unit) => unit.id === mapUnit.id)
       : undefined;
+  const selectedCivilianForMove = mapUnit?.kind === "civilian"
+    ? game.civilianUnits.find((unit) => unit.id === mapUnit.id && unit.owner === playerId)
+    : undefined;
   const draftedScanHexIds = selectedExplorer
     ? draft.find(
         (order): order is Extract<SecretOrder, { kind: "explorerScan" }> =>
@@ -459,20 +455,21 @@ export default function NetworkGameBoard({
       : mapUnit?.kind === "civilian"
         ? game.civilianUnits.find((unit) => unit.id === mapUnit.id)?.movesRemaining ?? 0
         : 0;
-  const unitRouteHead = routeSteps.at(-1) || mapUnit?.hex;
-  const unitPortalUsed = routeUsesPortal(mapUnit?.hex, routeSteps, map);
+  const unitOrigin = mapUnit?.kind === "explorer" ? selectedExplorer?.hex
+    : mapUnit?.kind === "colony" ? selectedColony?.hex : selectedCivilianForMove?.hex;
+  const unitMovePaths = unitIntent === "move" && mapUnit && unitOrigin && playerId !== undefined
+    ? movementTargets(game, playerId, unitOrigin, unitRange, mapUnit.kind,
+        mapUnit.kind === "explorer" ? selectedExplorer?.portalUsedTurn === game.turn
+          : mapUnit.kind === "colony" ? selectedColony?.portalUsedTurn === game.turn : false)
+    : new Map<string, string[]>();
   const unitTargets =
     unitIntent && mapUnit
-      ? (unitIntent === "longRangeSurvey"
+      ? (unitIntent === "move" ? [...unitMovePaths.keys()]
+          : unitIntent === "longRangeSurvey"
           ? game.hexes.map((hex) => hex.id)
           : unitIntent === "farboundScan" || unitIntent === "wayfarerRecon" || unitIntent === "publicScan"
             ? getNeighbors(mapUnit.hex, map)
-            : routeSteps.length < unitRange && unitRouteHead ? [...new Set([
-                ...getNeighbors(unitRouteHead, map),
-                ...(!unitPortalUsed && mapUnit.kind !== "civilian" && playerId !== undefined &&
-                  (mapUnit.kind === "explorer" ? selectedExplorer?.portalUsedTurn !== game.turn : selectedColony?.portalUsedTurn !== game.turn)
-                  ? portalNeighbors(game, playerId, unitRouteHead) : []),
-              ])].filter((id) => id !== mapUnit.hex && !routeSteps.includes(id)) : []
+            : []
         ).filter((id) => {
           const hex = game.hexes.find((candidate) => candidate.id === id);
           if (!hex || hex.kind === "rift") return false;
@@ -483,9 +480,10 @@ export default function NetworkGameBoard({
             );
           if (unitIntent === "publicScan")
             return !hex.revealed && !draftedScanHexIds.includes(id);
-          if (unitIntent === "move" && mapUnit.kind === "explorer" && playerId !== undefined)
-            return validateExplorationPath(game, playerId, selectedExplorer?.id || mapUnit.id, id, [...routeSteps, id]).ok;
-          return hex.revealed;
+          if (unitIntent === "move" && selectedCivilianForMove?.type === "envoy" &&
+            hex.owner !== undefined && hex.owner !== playerId &&
+            playerId !== undefined && !hasStationingPermission(game, hex.owner, playerId, "envoy")) return false;
+          return unitIntent === "move" || hex.revealed;
         })
       : [];
   const buildTargets =
@@ -510,38 +508,18 @@ export default function NetworkGameBoard({
         return !!target?.revealed && target.kind !== "rift";
       })
     : [];
-  const activeTargets = migrationTargets.length
-    ? migrationTargets
-    : bombardTargets.length
-    ? bombardTargets.map((target) => target.hexId)
-    : militaryTargets.length
-      ? militaryTargets
-      : unitTargets.length
-        ? unitTargets
-        : buildTargets;
+  const activeTargets = migrationMobileId ? migrationTargets
+    : bombardCarrierId ? bombardTargets.map((target) => target.hexId)
+    : militaryTargeting ? militaryTargets
+    : unitIntent ? unitTargets : buildTargets;
 
   const planningRoute = militaryTargeting || unitIntent === "move";
-  const routeOrigin = militaryTargeting ? militaryOrigin : mapUnit?.hex;
-  const routeWarnings = routeSteps.flatMap((id) => {
-    const hex = game.hexes.find((candidate) => candidate.id === id);
-    const hostile = game.carriers.filter((carrier) => carrier.hex === id && carrier.owner !== playerId);
-    const warnings: string[] = [];
-    if (hex && !hex.revealed) warnings.push(`${id}: unrevealed sector`);
-    if (hex?.owner !== undefined && hex.owner !== playerId)
-      warnings.push(`${id}: ${game.players[hex.owner]?.name || "another faction"} controlled hex`);
-    if (hostile.length) warnings.push(`${id}: ${hostile.length} other-faction military vessel${hostile.length === 1 ? "" : "s"}`);
-    if (game.blockades.some((blockade) => blockade.hex === id && blockade.active && blockade.owner !== playerId))
-      warnings.push(`${id}: other-faction Blockade`);
-    return warnings;
-  });
 
-  function confirmRoute() {
-    if (!canDraft || !routeSteps.length || !routeOrigin) return;
-    const destination = routeSteps[routeSteps.length - 1];
-    const path = [...routeSteps];
-    if (militaryTargeting && playerId !== undefined) {
-      const validation = validateCarrierRoute(game, playerId, taskForceIds, destination, path);
-      if (!validation.ok) return setDraftNotice(validation.message);
+  function draftMovement(destination: string) {
+    if (!canDraft) return;
+    if (militaryTargeting) {
+      const path = militaryPaths.get(destination);
+      if (!path || playerId === undefined) return;
       const selected = [...taskForceIds];
       setDraft((current) => [
         ...current.filter((order) =>
@@ -550,13 +528,10 @@ export default function NetworkGameBoard({
             legalBombardmentTargets(game, playerId, order.carrierId, undefined, destination).some((target) => target.hexId === order.targetHexId))),
         { id: uid("fleet"), kind: "carrierMove", carrierIds: selected, destination, path },
       ]);
-      setDraftNotice(`Fleet route ${routeOrigin} → ${path.join(" → ")} added to Orders.${routeWarnings.length ? " Review the hostile sectors before sealing." : ""}`);
       setMilitaryTargeting(false);
     } else if (unitIntent === "move" && mapUnit) {
-      if (mapUnit.kind === "explorer" && playerId !== undefined) {
-        const validation = validateExplorationPath(game, playerId, selectedExplorer?.id || mapUnit.id, destination, path);
-        if (!validation.ok) return setDraftNotice(validation.message);
-      }
+      const path = unitMovePaths.get(destination);
+      if (!path) return;
       const order: SecretOrder = mapUnit.kind === "explorer"
         ? { id: uid("explorer"), kind: "explorerMove", vesselId: selectedExplorer?.id || mapUnit.id, destination, path }
         : mapUnit.kind === "colony"
@@ -569,16 +544,13 @@ export default function NetworkGameBoard({
           : removeUnitOrders(current, mapUnit);
         return [...cleaned, order];
       });
-      setDraftNotice(`Vessel route ${routeOrigin} → ${path.join(" → ")} added to Orders.`);
       setUnitIntent(null);
     }
-    setRouteSteps([]);
     setContextOpen(false);
-    setPanel("orders");
+    setPanel("map");
   }
 
   function openBuildAt(hexId: string) {
-    setRouteSteps([]);
     setSelectedHexId(hexId);
     setBuildHexId(hexId);
     setBuildTargeting(false);
@@ -593,10 +565,6 @@ export default function NetworkGameBoard({
 
   function clickHex(id: string) {
     setSelectedHexId(id);
-    if (planningRoute && routeSteps.includes(id)) {
-      setRouteSteps((current) => current.slice(0, current.indexOf(id) + 1));
-      return;
-    }
     if (!migrationMobileId) setSelectedReachAssetId(null);
     if (game.scenarioId === "first-horizon" && tutorialLessonId === "inspect") {
       const home = game.hexes.find((hex) => hex.kind === "home" && hex.originalOwner === playerId)?.id;
@@ -629,8 +597,8 @@ export default function NetworkGameBoard({
       setDockOpen(true);
       return;
     }
-    if (militaryTargeting && militaryTargets.includes(id)) {
-      setRouteSteps((current) => [...current, id]);
+    if (militaryTargeting) {
+      if (militaryPaths.has(id)) draftMovement(id);
       return;
     }
     if (unitIntent && mapUnit && unitTargets.includes(id)) {
@@ -683,7 +651,7 @@ export default function NetworkGameBoard({
         return;
       }
       if (unitIntent === "move") {
-        setRouteSteps((current) => [...current, id]);
+        draftMovement(id);
         return;
       }
       setDraft((current) => [...removeUnitOrders(current, mapUnit),
@@ -719,7 +687,6 @@ export default function NetworkGameBoard({
     setContextOpen(true);
     setDockOpen(false);
     setUnitIntent(null);
-    setRouteSteps([]);
   }
   function notify(text: string) {
     setDraftNotice(text);
@@ -758,7 +725,6 @@ export default function NetworkGameBoard({
     if (!player) return;
     setUnitIntent(null);
     setMilitaryTargeting(false);
-    setRouteSteps([]);
     setPanel("map");
     setDockOpen(false);
     setSelectedHexId(unit.hex);
@@ -903,11 +869,6 @@ export default function NetworkGameBoard({
         : !!selectedCivilian &&
           selectedCivilian.readyTurn <= game.turn &&
           selectedCivilian.movesRemaining > 0;
-  const selectedMover = selectedExplorer || selectedColony || selectedCivilian;
-  const moveReason = !canDraft ? "Orders cannot be changed during this phase."
-    : selectedMover && selectedMover.readyTurn > game.turn ? "This vessel is ready to move next Turn."
-    : selectedMover && selectedMover.movesRemaining <= 0 ? "This vessel has used its movement for this Turn."
-    : "";
   const prospectHex =
     selectedCivilian?.type === "prospector"
       ? game.hexes.find((hex) => hex.id === selectedCivilian.hex)
@@ -1513,12 +1474,10 @@ export default function NetworkGameBoard({
                           <button
                             className="primary"
                             disabled={!canDraft || !canMoveSelected}
-                            title={moveReason}
-                            onClick={() => { setRouteSteps([]); setUnitIntent("move"); }}
+                            onClick={() => setUnitIntent("move")}
                           >
                             Move
                           </button>
-                          {moveReason && <small className="context-reason">{moveReason}</small>}
                           {mapUnit.kind === "colony" && (
                             <button
                               disabled={!canDraft || !!establishReason}
@@ -1585,9 +1544,9 @@ export default function NetworkGameBoard({
                     draft={draft}
                     setDraft={setDraft}
                     selectedIds={taskForceIds}
-                    setSelectedIds={(ids) => { setTaskForceIds(ids); setRouteSteps([]); }}
+                    setSelectedIds={setTaskForceIds}
                     targeting={militaryTargeting}
-                    beginTargeting={() => { setRouteSteps([]); setMilitaryTargeting(true); }}
+                    beginTargeting={() => setMilitaryTargeting(true)}
                     busy={busy}
                     onCommand={onCommand}
                   />
@@ -1741,8 +1700,8 @@ export default function NetworkGameBoard({
               {!!game.turnReplays?.length && <button onClick={() => openReplay()}>Previous Orders</button>}
             </div>
           </div>
-          {(activeTargets.length > 0 || planningRoute && routeSteps.length > 0) && (
-            <div className={`network-target-prompt ${planningRoute ? "route-planner" : ""}`}>
+          {(activeTargets.length > 0 || planningRoute) && (
+            <div className="network-target-prompt">
               <span>
                 <b>{migrationMobile ? mobileHabitatLibrary[migrationMobile.type].name : bombardCarrier ? carrierLibrary[bombardCarrier.type].name : selectedUnitName}</b>
                 <small>
@@ -1757,7 +1716,7 @@ export default function NetworkGameBoard({
                       : "Move selected"}
                 </small>
               </span>
-              <strong>
+              {activeTargets.length > 0 && <strong>
                 {migrationMobileId
                   ? "Choose a highlighted destination hex"
                   : bombardCarrierId
@@ -1765,17 +1724,8 @@ export default function NetworkGameBoard({
                   : unitIntent === "longRangeSurvey" ||
                 unitIntent === "farboundScan" || unitIntent === "wayfarerRecon"
                   ? "Choose an unrevealed sector"
-                  : planningRoute ? "Tap adjacent highlighted hexes, then confirm the complete route" : "Choose a highlighted destination"}
-              </strong>
-              {planningRoute && routeOrigin && <div className="route-preview" aria-live="polite">
-                <b>Route: {routeOrigin}{routeSteps.map((step) => ` → ${step}`).join("")}</b>
-                <small>{routeSteps.length} of {militaryTargeting ? militaryMovement : unitRange} movement selected</small>
-                {routeWarnings.length > 0 && <strong className="route-danger">Known danger: {routeWarnings.join("; ")}. Moving fleets through hostile sectors can cause combat.</strong>}
-                {routeSteps.length > 0 && <div className="route-actions">
-                  <button type="button" onClick={() => setRouteSteps((current) => current.slice(0, -1))}>Undo last step</button>
-                  <button type="button" className={routeWarnings.length ? "route-confirm-danger" : "primary"} onClick={confirmRoute}>{routeWarnings.length ? "Confirm route through danger" : "Confirm route"}</button>
-                </div>}
-              </div>}
+                  : "Choose a highlighted destination"}
+              </strong>}
               <button
                 onClick={() => {
                   setUnitIntent(null);
@@ -1783,7 +1733,6 @@ export default function NetworkGameBoard({
                   setBombardCarrierId(null);
                   setMigrationMobileId(null);
                   setBuildTargeting(false);
-                  setRouteSteps([]);
                 }}
               >
                 Cancel
@@ -1808,10 +1757,9 @@ export default function NetworkGameBoard({
                     <button
                       key={hex.id}
                       data-hex-id={hex.id}
-                      data-route-step={planningRoute && routeSteps.includes(hex.id) ? routeSteps.indexOf(hex.id) + 1 : undefined}
                       title={combatHexes.has(hex.id) ? `Combat occurred at ${hex.id}` : `Hex ${hex.id}`}
                       onClick={() => clickHex(hex.id)}
-                      className={`hex ${hexColumnClass(hex.col)} ${hex.kind} ${hex.tier === "Arcology" ? "arcology" : ""} ${hex.enhancedCenterIndices?.length ? "enhanced-centers" : ""} ${hex.centers.includes("factory") ? "factory-installed" : ""} ${!hex.revealed ? "concealed" : ""} ${!hex.revealed && hex.surveyedBy?.includes(playerId ?? -1) ? "privately-surveyed" : ""} ${selectedHexId === hex.id ? "selected" : ""} ${activeTargets.includes(hex.id) ? "legal-target" : ""} ${planningRoute && routeSteps.includes(hex.id) ? "route-step" : ""} ${combatHexes.has(hex.id) ? "combat-history" : ""}`}
+                      className={`hex ${hexColumnClass(hex.col)} ${hex.kind} ${hex.tier === "Arcology" ? "arcology" : ""} ${hex.enhancedCenterIndices?.length ? "enhanced-centers" : ""} ${hex.centers.includes("factory") ? "factory-installed" : ""} ${!hex.revealed ? "concealed" : ""} ${!hex.revealed && hex.surveyedBy?.includes(playerId ?? -1) ? "privately-surveyed" : ""} ${selectedHexId === hex.id ? "selected" : ""} ${activeTargets.includes(hex.id) ? "legal-target" : ""} ${combatHexes.has(hex.id) ? "combat-history" : ""}`}
                       style={
                         {
                           gridColumn: hex.col + 1,
@@ -1974,7 +1922,6 @@ export default function NetworkGameBoard({
                                 if (carrier.owner === playerId) {
                                   setBombardCarrierId(null);
                                   setTaskForceIds([carrier.id]);
-                                  setRouteSteps([]);
                                   setSelectedHexId(hex.id);
                                   setMapUnit(null);
                                   setSelectedReachAssetId(null);
@@ -2132,16 +2079,13 @@ export default function NetworkGameBoard({
               <button
                 className="primary"
                 disabled={!canDraft || !canMoveSelected}
-                title={moveReason}
                 onClick={() => {
-                  setRouteSteps([]);
                   setUnitIntent("move");
                   setContextOpen(false);
                 }}
               >
                 Move
               </button>
-              {moveReason && <small className="context-reason">{moveReason}</small>}
               {selectedExplorer &&
                 explorationLibrary[selectedExplorer.type].tech >= 2 && (
                   <button
@@ -2257,7 +2201,6 @@ export default function NetworkGameBoard({
                   selectedCarrier.cu < 1 || selectedCarrierBombardTwo || selectedCarrierCargoDrafted
                 }
                 onClick={() => {
-                  setRouteSteps([]);
                   setMilitaryTargeting(true);
                   setContextOpen(false);
                 }}

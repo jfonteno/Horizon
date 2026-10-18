@@ -39,12 +39,15 @@ test("Exploration III can reveal two unknown hexes on one path, and invalid path
   assert.equal(vessel.publicReveals, 2);
 });
 
-test("an impossible multihex Exploration route is rejected before sealing", () => {
+test("Exploration movement can reveal two sectors without consuming the scan allowance", () => {
   const state = game(), vessel = state.players[0].explorationVessels[0], map = mapLibrary[state.mapId];
   vessel.movesRemaining = 3;
   const first = getNeighbors(vessel.hex, map).find((id) => state.hexes.some((hex) => hex.id === id && !hex.revealed && hex.kind !== "rift"))!;
   const second = getNeighbors(first, map).find((id) => state.hexes.some((hex) => hex.id === id && !hex.revealed && hex.kind !== "rift"))!;
-  assert.match(projectedOrderBudget(state, 0, [{ id: "fog", kind: "explorerMove", vesselId: vessel.id, destination: second, path: [first, second] }]).error || "", /reveal limit/);
+  vessel.publicReveals = explorationRevealAllowance(state.players[0].tech.Exploration);
+  assert.equal(projectedOrderBudget(state, 0, [{ id: "fog", kind: "explorerMove", vesselId: vessel.id, destination: second, path: [first, second] }]).error, undefined);
+  assert.equal(moveExplorationVessel(state, 0, vessel.id, second, [first, second]).ok, true);
+  assert.equal(vessel.hex, second);
 });
 
 test("Spires can upgrade a Colony directly at Resource III", () => {

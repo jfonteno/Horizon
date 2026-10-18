@@ -5,12 +5,13 @@ import "./application-shell.css";
 import "./ui-update.css";
 import "./playtest-0355.css";
 import "./playtest-0356.css";
+import "./playtest-03510.css";
 import PwaLifecycle from "./components/PwaLifecycle";
 import InterfaceClick from "./components/InterfaceClick";
 
 export const metadata: Metadata = {
   title: "Horizon: Shattered Reach",
-  description: "Horizon 0.35.9 playtest: stable route planning and vessel selection across room updates.",
+  description: "Horizon 0.35.10 playtest: direct vessel movement and readable scrolling faction cards.",
   manifest: "/manifest.webmanifest",
   applicationName: "Horizon: Shattered Reach",
   themeColor: "#061820",

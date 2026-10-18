@@ -60,11 +60,11 @@ export function beginExplorationTurn(game: GameState, playerId: number) {
   if (player.explorationVessels?.[0]) player.explorer = player.explorationVessels[0].hex;
 }
 
-function publicReveal(game: GameState, playerId: number, vessel: ExplorationVesselState, hex: HexState) {
+function publicReveal(game: GameState, playerId: number, vessel: ExplorationVesselState, hex: HexState, duringMovement = false) {
   if (hex.revealed || hex.kind === "rift") return false;
   const player = game.players[playerId];
   const limit = explorationRevealAllowance(player.tech.Exploration);
-  if ((vessel.publicReveals || 0) >= limit) return false;
+  if (!duringMovement && (vessel.publicReveals || 0) >= limit) return false;
   hex.revealed = true;
   vessel.publicReveals = (vessel.publicReveals || 0) + 1;
   vessel.publicRevealsTurn = game.turn;
@@ -134,17 +134,14 @@ export function validateExplorationPath(game: GameState, playerId: number, vesse
   const steps = normalizedPath(vessel.hex, destination, path), map = mapLibrary[game.mapId];
   if (!steps.length || steps.length > vessel.movesRemaining) return { ok: false, message: "That path exceeds this vessel's movement." };
   let validated = vessel.hex;
-  let newReveals = 0;
   let portalSteps = 0;
   for (const id of steps) {
     const hex = game.hexes.find((candidate) => candidate.id === id);
     if (!hex || hex.kind === "rift" || !(getNeighbors(validated, map).includes(id) || portalNeighbors(game, playerId, validated).includes(id))) return { ok: false, message: "The selected path is not contiguous and navigable." };
     if (!getNeighbors(validated, map).includes(id)) portalSteps++;
-    if (!hex.revealed) newReveals++;
     validated = id;
   }
   if (portalSteps + Number(vessel.portalUsedTurn === game.turn) > 1) return { ok: false, message: "An Exploration vessel may traverse one portal per Turn." };
-  if (newReveals + (vessel.publicReveals || 0) > explorationRevealAllowance(player.tech.Exploration)) return { ok: false, message: "This vessel has reached its public reveal limit." };
   return { ok: true, message: "Valid exploration path." };
 }
 
@@ -158,7 +155,7 @@ export function moveExplorationVessel(game: GameState, playerId: number, vesselI
   for (let index = 0; index < steps.length; index++) {
     const hex = game.hexes.find((candidate) => candidate.id === steps[index]);
     if (!hex || hex.kind === "rift" || !(getNeighbors(current, map).includes(hex.id) || portalNeighbors(game, playerId, current).includes(hex.id))) return { ok: false, message: "The selected path is not contiguous and navigable." };
-    if (!hex.revealed && !publicReveal(game, playerId, vessel, hex)) return { ok: false, message: "This vessel has reached its public reveal limit." };
+    if (!hex.revealed && !publicReveal(game, playerId, vessel, hex, true)) return { ok: false, message: "That sector cannot be revealed." };
     resolveAnomaly(game, playerId, hex);
     current = hex.id;
   }

@@ -1,0 +1,24 @@
+/* Wider standings stay in one horizontal strip, including on narrow screens. */
+.faction-scorebar{
+  max-width:100%;min-width:0;justify-content:flex-start;overflow-x:auto;overflow-y:hidden;
+  scrollbar-width:auto;scrollbar-color:#4c98a9 #06151c;scroll-snap-type:x proximity;
+  overscroll-behavior-x:contain;touch-action:pan-x;
+}
+.faction-scorebar>button{
+  flex:0 0 410px;min-width:410px;max-width:410px;height:100%;
+  grid-template-columns:44px minmax(0,1fr) 47px;gap:10px;padding:7px 12px;
+  scroll-snap-align:start;
+}
+.faction-scorebar>button>i{width:43px;height:43px}
+.faction-scorebar>button>i img{width:40px;height:40px}
+.faction-scorebar>button>span b{font-size:15px;white-space:nowrap;text-overflow:clip}
+.faction-scorebar>button>span small{font-size:10px}
+.faction-scorebar>button>span .faction-card-resources{
+  display:flex!important;grid-template-columns:none!important;flex-wrap:nowrap;gap:8px;
+  white-space:nowrap;overflow:visible;font-size:12px;
+}
+.faction-scorebar>button>strong{font-size:23px;white-space:nowrap}
+@media(max-width:900px){
+  .faction-scorebar>button{flex-basis:390px;min-width:390px;max-width:390px;min-height:0}
+  .faction-scorebar>button>span .faction-card-resources{font-size:12px;gap:8px}
+}
