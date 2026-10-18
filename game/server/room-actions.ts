@@ -40,6 +40,8 @@ import { beginSecretOrders, resolveSecretOrders, submitSecretOrders } from "../r
 import { advanceTutorial, firstHorizonLessons, syncTutorial } from "../tutorial";
 import { advanceAcademy, recordAcademyCommand, recordAcademyPanel, restartAcademyStage, syncAcademy } from "../academy";
 import { gateTarget } from "../rules/format";
+import { projectedOrderBudget } from "../rules/purchases";
+import { sealPolicyVote } from "../rules/policy-deck";
 import { runPendingBotSeats } from "./bot-seats";
 import { reviewBotDiplomacy } from "../ai/intelligence";
 import { validateRoomCommand, type RoomCommand, type RoomCommandResult } from "./command";
@@ -203,6 +205,9 @@ function executeOnGame(
         ? { ok: true, message: "Hidden Legacy objective selected." }
         : { ok: false, message: "That Hidden Legacy objective cannot be selected." };
     }
+
+    case "sealPolicyVote":
+      return sealPolicyVote(game, playerId, command.policyId, command.influence);
 
     case "setHiddenCompleted": {
       const ok = setHiddenCompleted(game, playerId, command.completed);
@@ -452,6 +457,7 @@ function isPrivateCommunication(command: RoomCommand) {
 }
 
 function auditSafeCommand(command: RoomCommand): unknown {
+  if (command.kind === "sealPolicyVote") return { kind: command.kind, choice: "[sealed until resolution]" };
   if (command.kind === "sendChat") return { ...command, text: `[private message: ${command.text.trim().length} characters]` };
   if (command.kind === "reportChatMessage") return { ...command, reason: "[private moderation report]" };
   if (command.kind === "submitFeedback") return { kind: command.kind, rating: command.rating, difficulty: command.difficulty, wouldPlayAgain: command.wouldPlayAgain, issueTags: command.issueTags, note: `[private playtest note: ${command.note.trim().length} characters]` };
@@ -836,10 +842,18 @@ export async function executeRoomCommand(
   if (room.status === "complete" || room.game.result) return { ok: false, message: "That Horizon game is complete." };
   if (room.status === "lobby") return { ok: false, message: "The host must start the game before commands are accepted." };
   if (room.status === "paused") return { ok: false, message: "The host paused this game." };
+  if (command.kind === "submitOrders" && room.game.scenarioId !== "first-horizon" && room.seats[playerId]?.controller.kind === "human" &&
+      (room.game.turn - 1) % 4 === 0 && room.game.policyElection?.choices.length &&
+      !room.game.policyElection.votingClosed &&
+      !room.game.policyElection.votes.some((vote) => vote.playerId === playerId))
+    return { ok: false, message: "Seal your Policy ballot, including an abstention if you wish, before sealing Orders." };
   const previousTurn = room.game.turn;
   const previousProposalIds = new Set(room.game.proposals.map((proposal) => proposal.id));
   const previousBrokerageIds = new Set((room.game.brokerageOffers || []).map((offer) => offer.id));
   const game = structuredClone(room.game);
+  const protectedDrafts = room.drafts.filter((draft) => draft.turn === game.turn &&
+    !game.orderProtocol.submissions.some((submission) => submission.playerId === draft.playerId) &&
+    !projectedOrderBudget(game, draft.playerId, draft.orders).error);
   game.brokerageOffers ||= [];
   const action = executeOnGame(game, playerId, command, commandId);
   if (!action.ok) return action;
@@ -869,6 +883,11 @@ export async function executeRoomCommand(
       botChat.push({ botId: recipient, messages: review.messages });
     }
   }
+  // Bot acceptances can occur while the offer is created, so check after their
+  // response as well as after a human acceptance. Never commit a transaction
+  // that spends a resource already reserved by a valid private draft.
+  if (protectedDrafts.some((draft) => projectedOrderBudget(game, draft.playerId, draft.orders).error))
+    return { ok: false, message: "This transaction would consume resources committed to drafted Orders. Revise the trade or remove those Orders first." };
   if (
     command.kind === "submitOrders" &&
     options.runBotsAfterHumanOrders !== false &&

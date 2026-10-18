@@ -59,7 +59,7 @@ export function policyCost(game: GameState, playerId: number, type: "center" | "
 export function resolvePolicyVotes(game: GameState, entries: Array<{ playerId: number; order: SecretOrder }>) {
   const election = game.policyElection;
   if (!election || election.era !== game.era || election.votingClosed || (game.turn - 1) % 4 !== 0) return;
-  const voted = new Set<number>();
+  const voted = new Set(election.votes.map((vote) => vote.playerId));
   for (const { playerId, order } of entries) {
     if (order.kind !== "policyVote" || voted.has(playerId) || !election.choices.includes(order.policyId) || !Number.isInteger(order.influence) || order.influence < 1 || game.players[playerId].resources.influence < order.influence) continue;
     voted.add(playerId);
@@ -72,4 +72,23 @@ export function resolvePolicyVotes(game: GameState, entries: Array<{ playerId: n
   election.activePolicyId = winners.length === 1 && highest > 0 ? winners[0].id : undefined;
   election.votingClosed = true;
   game.log.unshift(election.activePolicyId ? `${policyDeck.find((card) => card.id === election.activePolicyId)?.name} passed for Era ${game.era}.` : `Galactic Policy vote ended without a winner in Era ${game.era}.`);
+}
+
+/** Seal the Era ballot before Orders. An abstention is recorded with zero Influence. */
+export function sealPolicyVote(game: GameState, playerId: number, policyId: string, influence: number) {
+  const election = game.policyElection;
+  const player = game.players[playerId];
+  if (!election || !player || election.era !== game.era || election.votingClosed ||
+      !election.choices.length || (game.turn - 1) % 4 !== 0 ||
+      !["negotiation", "orders"].includes(game.orderProtocol.phase) ||
+      game.orderProtocol.submissions.some((submission) => submission.playerId === playerId) ||
+      election.votes.some((vote) => vote.playerId === playerId))
+    return { ok: false, message: "This Era's Policy ballot is not accepting your vote." };
+  const abstaining = policyId === "" && influence === 0;
+  if (!abstaining && (!election.choices.includes(policyId) || !Number.isInteger(influence) ||
+      influence < 1 || player.resources.influence < influence))
+    return { ok: false, message: "Select a revealed Policy and pledge an affordable amount of Influence, or abstain." };
+  player.resources.influence -= influence;
+  election.votes.push({ playerId, policyId, influence });
+  return { ok: true, message: "Policy ballot sealed." };
 }

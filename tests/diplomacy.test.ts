@@ -29,7 +29,7 @@ test("Meridian establishes its first Trade Agreement for free", () => {
   assert.equal(game.agreements[0].type, "trade");
 });
 
-test("direct trade exchanges resources and applies Labor next Turn", () => {
+test("direct trade makes Labor available now and transfers capacity next Turn", () => {
   const game = diplomaticGame();
   game.agreements.push({ id: "trade-agreement", type: "trade", parties: [0, 1], startedTurn: 1 });
   const proposal: TradeProposal = {
@@ -46,6 +46,8 @@ test("direct trade exchanges resources and applies Labor next Turn", () => {
   assert.equal(resolveProposal(game, proposal.id, true).ok, true);
   assert.equal(game.players[0].resources.material, 8);
   assert.equal(game.players[0].resources.currency, 13);
+  assert.equal(game.players[0].labor, 2);
+  assert.equal(game.players[1].labor, 4, "Received Labor is usable for Orders in this Turn");
   assert.equal(game.players[0].laborCap, 3, "Capacity does not change immediately");
   processNewTurnDiplomacy(game, 2);
   assert.equal(game.players[0].laborBonus, -1);

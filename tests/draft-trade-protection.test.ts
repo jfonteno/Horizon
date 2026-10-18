@@ -1,0 +1,35 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { constructionQuote, createGame, executeRoomCommand, MemoryRoomRepository, projectedOrderBudget, RoomService } from "../game/index";
+
+test("accepting a trade cannot consume resources committed to a private draft", async () => {
+  const repository = new MemoryRoomRepository();
+  const service = new RoomService(repository);
+  const game = createGame(4, ["foundry", "meridian", "helix", "aurelians"], "shattered-reach", "horizon-base", 3515, [{ kind: "human" }, { kind: "human" }, { kind: "bot", profileId: "strategic-director" }, { kind: "bot", profileId: "strategic-director" }]);
+  const host = await service.create(game, "Host", "network", "HZN-TESTACCOUNT2");
+  const room = (await repository.get(host.code))!;
+  room.status = "active";
+  room.game.turn = 2;
+  room.game.orderProtocol.phase = "orders";
+  room.game.orderProtocol.turn = 2;
+  const home = room.game.hexes.find((hex) => hex.owner === 0 && !!hex.tier)!;
+  const construction = { type: "center" as const, center: "material" as const };
+  const cost = constructionQuote(room.game, 0, home.id, construction).cost;
+  room.game.players[0].resources.material = cost.material!;
+  room.game.players[0].resources.currency = 20;
+  room.game.players[0].labor = 5;
+  room.game.agreements.push({ id: "agreement", type: "trade", parties: [0, 1], startedTurn: 1 });
+  room.game.players[0].diplomacy.contacts.push(1);
+  room.game.players[1].diplomacy.contacts.push(0);
+  const order = { id: "reserve-center", kind: "construct" as const, habitatId: home.id, construction };
+  assert.equal(projectedOrderBudget(room.game, 0, [order]).error, undefined);
+  room.drafts.push({ playerId: 0, turn: 2, orders: [order], updatedAt: new Date().toISOString() });
+  room.game.proposals.push({ id: "take-reserved-material", kind: "trade", from: 1, to: 0, createdTurn: 2, status: "pending", offer: { material: 0, currency: 1, research: 0, labor: 0 }, request: { material: 1, currency: 0, research: 0, labor: 0 } });
+  await repository.put(room);
+  const result = await executeRoomCommand(repository, { code: host.code, token: host.token, expectedRevision: room.revision, commandId: "accept-reserved-trade", command: { kind: "respondProposal", proposalId: "take-reserved-material", accept: true } });
+  assert.equal(result.ok, false);
+  assert.match(result.message, /drafted Orders/);
+  const stored = (await repository.get(host.code))!;
+  assert.equal(stored.game.players[0].resources.material, cost.material);
+  assert.equal(stored.game.proposals.at(-1)?.status, "pending");
+});

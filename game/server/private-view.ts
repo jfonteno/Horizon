@@ -45,6 +45,8 @@ export function projectPrivateGame(
   game.orderProtocol.submissions = game.orderProtocol.submissions.filter(
     (submission) => submission.playerId === playerId,
   );
+  if (game.policyElection && !game.policyElection.votingClosed)
+    game.policyElection.votes = game.policyElection.votes.filter((vote) => vote.playerId === playerId);
   game.selectedCarrierIds = game.selectedCarrierIds.filter((carrierId) =>
     game.carriers.some(
       (carrier) => carrier.id === carrierId && carrier.owner === playerId,
@@ -70,6 +72,7 @@ export function projectSpectatorGame(source: GameState): GameState {
   game.proposals = [];
   game.pendingLabor = [];
   game.orderProtocol.submissions = [];
+  if (game.policyElection && !game.policyElection.votingClosed) game.policyElection.votes = [];
   game.selectedCarrierIds = [];
   game.botReports = [];
   game.botMemory = [];

@@ -1961,7 +1961,7 @@ export function takeBotTurn(game: GameState, playerId: number, profile: BotProfi
     const policyId = preferences.find((id) => game.policyElection!.choices.includes(id)) || game.policyElection.choices[0];
     const vote: SecretOrder = { id: `bot-policy-${game.era}-${playerId}`, kind: "policyVote", policyId, influence: 1 };
     const projectedVote = projectedOrderBudget(game, playerId, [...plan.orders, vote]);
-    if (!projectedVote.error && projectedVote.remaining.resources.influence >= Math.max(1, memory.strategy?.reserve.influence || 0)) plan.orders.push(vote);
+    if (!projectedVote.error) plan.orders.push(vote);
   }
   const plannedSubmission = submitSecretOrders(game, playerId, plan.orders);
   const submission = plannedSubmission.ok ? plannedSubmission : submitSecretOrders(game, playerId, []);

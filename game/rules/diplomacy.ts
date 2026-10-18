@@ -335,7 +335,7 @@ function availableLabor(game: GameState, playerId: number): number {
   const committed = game.pendingLabor
     .filter((change) => change.playerId === playerId && change.amount < 0)
     .reduce((sum, change) => sum - change.amount, 0);
-  return Math.max(0, game.players[playerId].laborCap - committed);
+  return Math.max(0, Math.min(game.players[playerId].labor, game.players[playerId].laborCap - committed));
 }
 
 function canProvide(
@@ -370,6 +370,10 @@ function transferBundle(
     game.players[to].resources.influence += bundle.influence;
   }
   if (bundle.labor) {
+    // The capacity transfer becomes permanent next Turn; the buyer can use
+    // the Labor received immediately in the current Orders phase.
+    game.players[from].labor -= bundle.labor;
+    game.players[to].labor += bundle.labor;
     const effectiveTurn = game.turn + 1;
     game.pendingLabor.push({
       playerId: from,

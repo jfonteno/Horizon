@@ -8,7 +8,7 @@ import type {
 import { factionRules } from "../factions";
 import { availableCivilianType, civilianLibrary } from "./faction-operations";
 import { technologyCost } from "./diplomacy";
-import { availableCarrierTypes, carrierCost, carrierLibrary } from "./fleet";
+import { availableCarrierTypes, carrierCost, carrierLibrary, validateCarrierRoute } from "./fleet";
 import { canPay, centerCosts, spend, tributeCosts } from "./economy";
 import { availableExplorationTypes, explorationLibrary, validateExplorationPath } from "./exploration";
 import { colonyShipDefinition } from "./colony";
@@ -94,7 +94,7 @@ export function constructionQuote(
     if (construction.center === "factory") return unavailable("Factories require the Guilds Factory construction.");
     if (construction.center === "defense" && habitat.centers.some((center, index) => index !== construction.centerIndex && center === "defense")) return unavailable("This Habitat already has a Defense Grid.");
     const cost = construction.center === "defense" ? { material: 2, currency: 1, labor: 1 } : factionRules(player) === "helix" && construction.center === "research" ? { material: 1, currency: 1, labor: 1 } : { ...centerCosts[construction.center] };
-    if (construction.center !== "defense" && factionRules(player) === "aegis" && !player.legacyMetrics.aegisEconomicCenterBuilt) cost.currency = Math.max(0, cost.currency - 1);
+    if (construction.center !== "defense" && factionRules(player) === "aegis" && !player.legacyMetrics.aegisEconomicCenterBuilt) cost.currency = Math.max(0, (cost.currency || 0) - 1);
     return { label: `Replace ${old} with ${construction.center}`, cost: policyCost(game, playerId, "center", cost, construction.center !== "defense"), available: true };
   }
 
@@ -199,6 +199,10 @@ export function projectedOrderBudget(
   const remaining = structuredClone(game.players[playerId]);
   for (const order of orders) if (order.kind === "explorerMove") {
     const validation = validateExplorationPath(game, playerId, order.vesselId, order.destination, order.path);
+    if (!validation.ok) return { remaining, error: validation.message };
+  }
+  for (const order of orders) if (order.kind === "carrierMove") {
+    const validation = validateCarrierRoute(game, playerId, order.carrierIds, order.destination, order.path);
     if (!validation.ok) return { remaining, error: validation.message };
   }
   // Quotes only mutate a Habitat's tier/Center slots. Do not clone histories
@@ -312,11 +316,13 @@ export function projectedOrderBudget(
   return { remaining };
 }
 
-export function totalOrderCost(game: GameState, playerId: number, orders: SecretOrder[]) {
+function calculateOrderCosts(game: GameState, playerId: number, orders: SecretOrder[]) {
   const projected = structuredClone(game);
   const total: PurchaseCost = {};
+  const individual: PurchaseCost[] = [];
   for (const order of orders) {
     const cost = purchaseCostForOrder(projected, playerId, order);
+    individual.push(cost || {});
     if (!cost) continue;
     for (const [resource, amount] of Object.entries(cost))
       total[resource as keyof PurchaseCost] = (total[resource as keyof PurchaseCost] || 0) + amount;
@@ -337,5 +343,13 @@ export function totalOrderCost(game: GameState, playerId: number, orders: Secret
     if (order.kind === "technology" && activePolicy(projected) === "scientific-exchange") markPolicyUsed(projected, playerId, "technology");
     if (order.kind === "tribute" && activePolicy(projected) === "horizon-priority") markPolicyUsed(projected, playerId, "tribute");
   }
-  return total;
+  return { total, individual };
+}
+
+export function totalOrderCost(game: GameState, playerId: number, orders: SecretOrder[]) {
+  return calculateOrderCosts(game, playerId, orders).total;
+}
+
+export function individualOrderCosts(game: GameState, playerId: number, orders: SecretOrder[]) {
+  return calculateOrderCosts(game, playerId, orders).individual;
 }

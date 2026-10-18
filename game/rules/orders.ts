@@ -594,9 +594,9 @@ export function orderLabel(order: SecretOrder) {
     case "hold":
       return order.label || "Hold";
     case "carrierMove":
-      return `Move ${order.carrierIds.length} carrier${order.carrierIds.length === 1 ? "" : "s"} to ${order.destination}`;
+      return `Move ${order.carrierIds.length} carrier${order.carrierIds.length === 1 ? "" : "s"} via ${order.path?.join(" → ") || order.destination}`;
     case "explorerMove":
-      return `Explorer to ${order.destination}`;
+      return `Explorer via ${order.path?.join(" → ") || order.destination}`;
     case "explorerScan":
       return `Public scan ${order.hexIds.join(", ")}`;
     case "farboundForwardScan":
@@ -604,7 +604,7 @@ export function orderLabel(order: SecretOrder) {
     case "wayfarerDeepRecon":
       return `Private Deep Recon ${order.hexId}`;
     case "colonyMove":
-      return `Colony Ship to ${order.destination}`;
+      return `Colony Ship via ${order.path?.join(" → ") || order.destination}`;
     case "civilianMove":
       return `Faction vessel to ${order.destination}`;
     case "longRangeSurvey":

@@ -630,7 +630,12 @@ export function resolveSimultaneousCarrierMoves(
   game: GameState,
   requested: Array<{ playerId: number; carrierIds: string[]; destination: string; path?: string[] }>,
 ) {
-  const pending = requested.map((order) => ({ ...order, steps: order.path?.length ? [...order.path] : [order.destination] }));
+  const pending = requested.map((order) => {
+    const origin = game.carriers.find((carrier) => order.carrierIds.includes(carrier.id))?.hex;
+    const steps = order.path?.length ? [...order.path] : [order.destination];
+    if (steps[0] === origin) steps.shift();
+    return { ...order, steps };
+  });
   const maximum = Math.max(0, ...pending.map((order) => order.steps.length));
   for (let step = 0; step < maximum; step++) {
     const batch = pending.filter((order) => order.steps[step]).map((order) => ({
@@ -640,6 +645,35 @@ export function resolveSimultaneousCarrierMoves(
     }));
     if (batch.length) resolveCarrierMoveStep(game, batch);
   }
+}
+
+/** Validate the exact path before accepting a fleet Order, not just its destination. */
+export function validateCarrierRoute(game: GameState, playerId: number, carrierIds: string[], destination: string, path?: string[]) {
+  const carriers = carrierIds.map((id) => game.carriers.find((carrier) => carrier.id === id));
+  if (!carriers.length || new Set(carrierIds).size !== carrierIds.length || carriers.some((carrier) => !carrier || carrier.owner !== playerId))
+    return { ok: false, message: "Select your military vessels for this route." };
+  const origin = carriers[0]!.hex;
+  if (carriers.some((carrier) => carrier!.hex !== origin || carrier!.readyTurn > game.turn || carrier!.cu < 1))
+    return { ok: false, message: "All selected vessels must be ready, crewed, and in the same hex." };
+  const steps = path?.length ? [...path] : [destination];
+  if (steps[0] === origin) steps.shift();
+  if (!steps.length || steps.at(-1) !== destination || steps.length > Math.min(...carriers.map((carrier) => carrier!.movesRemaining)))
+    return { ok: false, message: "The planned route exceeds the task force's available movement." };
+  const map = mapLibrary[game.mapId];
+  let current = origin;
+  let portalUsed = carriers.some((carrier) => carrier!.portalUsedTurn === game.turn);
+  for (const step of steps) {
+    const hex = game.hexes.find((candidate) => candidate.id === step);
+    const neighboring = getNeighbors(current, map).includes(step);
+    if (!hex?.revealed || hex.kind === "rift" || !(neighboring || portalNeighbors(game, playerId, current).includes(step)))
+      return { ok: false, message: `The route through ${step} is not a contiguous revealed path.` };
+    if (!neighboring) {
+      if (portalUsed) return { ok: false, message: "A vessel may traverse only one portal per Turn." };
+      portalUsed = true;
+    }
+    current = step;
+  }
+  return { ok: true, message: "Valid military route." };
 }
 
 function resolveCombat(game: GameState, attackerId: number, destination: string): void {

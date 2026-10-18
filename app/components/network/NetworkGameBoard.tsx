@@ -10,12 +10,11 @@ import {
   constructionQuote,
   formatPurchaseCost,
   getNeighbors,
-  reachableHexes,
-  shortestPath,
   isContacted,
   mapLibrary,
   orderLabel,
   projectedOrderBudget,
+  individualOrderCosts,
   totalOrderCost,
   gateTarget,
   totalTurns,
@@ -51,6 +50,7 @@ import RoomLobby from "./RoomLobby";
 import RoomStatus from "./RoomStatus";
 import CommandIcon from "./CommandIcon";
 import HexDetails from "./HexDetails";
+import { publicFeedItems } from "./PublicFeed";
 import { playerHints } from "../../../game/rules/player-hints";
 import { hexColumnClass, mapCanvasDimensions } from "../../lib/map-geometry";
 import { useMapGestures } from "../../lib/use-map-gestures";
@@ -64,11 +64,13 @@ import NetworkAcademyGuide from "./NetworkAcademyGuide";
 import NetworkCommsPanel from "./NetworkCommsPanel";
 import ShatteredReachPanel from "../ShatteredReachPanel";
 import GameplayAudio from "./GameplayAudio";
-import PolicyVotePanel from "../PolicyVotePanel";
 import { ResourceGlyph } from "./ResourceGlyph";
 import { uncommandedUnits, type UncommandedUnit } from "../../../game/rules/uncommanded-units";
 import { portalNeighbors } from "../../../game/rules/portals";
+import { combatHexesFromReplays } from "../../lib/combat-hexes";
+import { routeUsesPortal } from "../../lib/route-steps";
 import { validateExplorationPath } from "../../../game/rules/exploration";
+import { validateCarrierRoute } from "../../../game/rules/fleet";
 
 type Panel =
   | "map"
@@ -277,6 +279,7 @@ export default function NetworkGameBoard({
   const [selectedReachAssetId, setSelectedReachAssetId] = useState<string | null>(null);
   const [migrationMobileId, setMigrationMobileId] = useState<string | null>(null);
   const [unitIntent, setUnitIntent] = useState<UnitIntent>(null);
+  const [routeSteps, setRouteSteps] = useState<string[]>([]);
   const [taskForceIds, setTaskForceIds] = useState<string[]>([]);
   const [militaryTargeting, setMilitaryTargeting] = useState(false);
   const [bombardCarrierId, setBombardCarrierId] = useState<string | null>(null);
@@ -326,6 +329,7 @@ export default function NetworkGameBoard({
     setBombardCarrierId(null);
     setBombardStrength(1);
     setUnitIntent(null);
+    setRouteSteps([]);
     setBuildTargeting(false);
     setBuildHexId(null);
     setDraftNotice(
@@ -412,22 +416,24 @@ export default function NetworkGameBoard({
     return view;
   }, [game, playerId, selectedHexId]);
 
-  const militaryOrigin = game.carriers.find((carrier) =>
-    taskForceIds.includes(carrier.id),
-  )?.hex;
-  const militaryMovement = taskForceIds.length
-    ? Math.min(
-        ...game.carriers
-          .filter((carrier) => taskForceIds.includes(carrier.id))
-          .map((carrier) => carrier.movesRemaining),
-      )
+  const selectedFleet = game.carriers.filter((carrier) =>
+    taskForceIds.includes(carrier.id) && carrier.owner === playerId,
+  );
+  // Room updates can remove a selected vessel while this component is mounted.
+  const completeFleetSelection = taskForceIds.length > 0 && selectedFleet.length === taskForceIds.length;
+  const militaryOrigin = completeFleetSelection ? selectedFleet[0].hex : undefined;
+  const militaryMovement = completeFleetSelection
+    ? Math.min(...selectedFleet.map((carrier) => carrier.movesRemaining))
     : 0;
+  const militaryRouteHead = routeSteps.at(-1) || militaryOrigin;
+  const militaryPortalUsed = routeUsesPortal(militaryOrigin, routeSteps, map);
   const militaryTargets =
-    militaryTargeting && militaryOrigin
-      ? [...new Set([...reachableHexes(militaryOrigin, militaryMovement, map, (id) => {
-          const hex = game.hexes.find((candidate) => candidate.id === id);
-          return !!hex && hex.revealed && hex.kind !== "rift";
-        }), ...(playerId !== undefined ? portalNeighbors(game, playerId, militaryOrigin) : [])])]
+    militaryTargeting && militaryOrigin && militaryRouteHead && routeSteps.length < militaryMovement
+      ? [...new Set([...getNeighbors(militaryRouteHead, map), ...(!militaryPortalUsed && playerId !== undefined &&
+          !taskForceIds.some((carrierId) => game.carriers.find((carrier) => carrier.id === carrierId)?.portalUsedTurn === game.turn)
+          ? portalNeighbors(game, playerId, militaryRouteHead) : [])])].filter((id) =>
+          id !== militaryOrigin && !routeSteps.includes(id) &&
+          game.hexes.some((hex) => hex.id === id && hex.revealed && hex.kind !== "rift"))
       : [];
   const selectedExplorer =
     mapUnit?.kind === "explorer"
@@ -446,28 +452,27 @@ export default function NetworkGameBoard({
             selectedExplorer.id,
       )?.hexIds || []
     : [];
-  const unitRange =
-    selectedExplorer?.movesRemaining ||
-    (mapUnit?.kind === "colony"
-      ? selectedColony?.movesRemaining || 0
-      : game.civilianUnits.find((unit) => unit.id === mapUnit?.id)
-          ?.movesRemaining || 1);
+  const unitRange = mapUnit?.kind === "explorer"
+    ? selectedExplorer?.movesRemaining ?? 0
+    : mapUnit?.kind === "colony"
+      ? selectedColony?.movesRemaining ?? 0
+      : mapUnit?.kind === "civilian"
+        ? game.civilianUnits.find((unit) => unit.id === mapUnit.id)?.movesRemaining ?? 0
+        : 0;
+  const unitRouteHead = routeSteps.at(-1) || mapUnit?.hex;
+  const unitPortalUsed = routeUsesPortal(mapUnit?.hex, routeSteps, map);
   const unitTargets =
     unitIntent && mapUnit
       ? (unitIntent === "longRangeSurvey"
           ? game.hexes.map((hex) => hex.id)
           : unitIntent === "farboundScan" || unitIntent === "wayfarerRecon" || unitIntent === "publicScan"
             ? getNeighbors(mapUnit.hex, map)
-            : [...new Set([...reachableHexes(mapUnit.hex, unitRange, map, (id, final) => {
-                const hex = game.hexes.find((candidate) => candidate.id === id);
-                return (
-                  !!hex &&
-                  hex.kind !== "rift" &&
-                  (mapUnit.kind === "explorer"
-                    ? hex.revealed || (player?.tech.Exploration || 1) >= 2 || final
-                    : hex.revealed)
-                );
-              }), ...(playerId !== undefined ? portalNeighbors(game, playerId, mapUnit.hex) : [])])]
+            : routeSteps.length < unitRange && unitRouteHead ? [...new Set([
+                ...getNeighbors(unitRouteHead, map),
+                ...(!unitPortalUsed && mapUnit.kind !== "civilian" && playerId !== undefined &&
+                  (mapUnit.kind === "explorer" ? selectedExplorer?.portalUsedTurn !== game.turn : selectedColony?.portalUsedTurn !== game.turn)
+                  ? portalNeighbors(game, playerId, unitRouteHead) : []),
+              ])].filter((id) => id !== mapUnit.hex && !routeSteps.includes(id)) : []
         ).filter((id) => {
           const hex = game.hexes.find((candidate) => candidate.id === id);
           if (!hex || hex.kind === "rift") return false;
@@ -478,7 +483,9 @@ export default function NetworkGameBoard({
             );
           if (unitIntent === "publicScan")
             return !hex.revealed && !draftedScanHexIds.includes(id);
-          return mapUnit.kind === "explorer" || hex.revealed;
+          if (unitIntent === "move" && mapUnit.kind === "explorer" && playerId !== undefined)
+            return validateExplorationPath(game, playerId, selectedExplorer?.id || mapUnit.id, id, [...routeSteps, id]).ok;
+          return hex.revealed;
         })
       : [];
   const buildTargets =
@@ -513,7 +520,65 @@ export default function NetworkGameBoard({
         ? unitTargets
         : buildTargets;
 
+  const planningRoute = militaryTargeting || unitIntent === "move";
+  const routeOrigin = militaryTargeting ? militaryOrigin : mapUnit?.hex;
+  const routeWarnings = routeSteps.flatMap((id) => {
+    const hex = game.hexes.find((candidate) => candidate.id === id);
+    const hostile = game.carriers.filter((carrier) => carrier.hex === id && carrier.owner !== playerId);
+    const warnings: string[] = [];
+    if (hex && !hex.revealed) warnings.push(`${id}: unrevealed sector`);
+    if (hex?.owner !== undefined && hex.owner !== playerId)
+      warnings.push(`${id}: ${game.players[hex.owner]?.name || "another faction"} controlled hex`);
+    if (hostile.length) warnings.push(`${id}: ${hostile.length} other-faction military vessel${hostile.length === 1 ? "" : "s"}`);
+    if (game.blockades.some((blockade) => blockade.hex === id && blockade.active && blockade.owner !== playerId))
+      warnings.push(`${id}: other-faction Blockade`);
+    return warnings;
+  });
+
+  function confirmRoute() {
+    if (!canDraft || !routeSteps.length || !routeOrigin) return;
+    const destination = routeSteps[routeSteps.length - 1];
+    const path = [...routeSteps];
+    if (militaryTargeting && playerId !== undefined) {
+      const validation = validateCarrierRoute(game, playerId, taskForceIds, destination, path);
+      if (!validation.ok) return setDraftNotice(validation.message);
+      const selected = [...taskForceIds];
+      setDraft((current) => [
+        ...current.filter((order) =>
+          (order.kind !== "carrierMove" || !order.carrierIds.some((carrierId) => selected.includes(carrierId))) &&
+          (order.kind !== "bombard" || !selected.includes(order.carrierId) ||
+            legalBombardmentTargets(game, playerId, order.carrierId, undefined, destination).some((target) => target.hexId === order.targetHexId))),
+        { id: uid("fleet"), kind: "carrierMove", carrierIds: selected, destination, path },
+      ]);
+      setDraftNotice(`Fleet route ${routeOrigin} → ${path.join(" → ")} added to Orders.${routeWarnings.length ? " Review the hostile sectors before sealing." : ""}`);
+      setMilitaryTargeting(false);
+    } else if (unitIntent === "move" && mapUnit) {
+      if (mapUnit.kind === "explorer" && playerId !== undefined) {
+        const validation = validateExplorationPath(game, playerId, selectedExplorer?.id || mapUnit.id, destination, path);
+        if (!validation.ok) return setDraftNotice(validation.message);
+      }
+      const order: SecretOrder = mapUnit.kind === "explorer"
+        ? { id: uid("explorer"), kind: "explorerMove", vesselId: selectedExplorer?.id || mapUnit.id, destination, path }
+        : mapUnit.kind === "colony"
+          ? { id: uid("colony"), kind: "colonyMove", vesselId: mapUnit.id, destination, path }
+          : { id: uid("civilian"), kind: "civilianMove", unitId: mapUnit.id, destination };
+      setDraft((current) => {
+        const keepFarboundScan = mapUnit.kind === "explorer" && player?.faction === "farbound";
+        const cleaned = keepFarboundScan
+          ? current.filter((candidate) => !((candidate.kind === "explorerMove" || candidate.kind === "explorerScan") && (candidate.vesselId || player?.explorationVessels[0]?.id) === mapUnit.id))
+          : removeUnitOrders(current, mapUnit);
+        return [...cleaned, order];
+      });
+      setDraftNotice(`Vessel route ${routeOrigin} → ${path.join(" → ")} added to Orders.`);
+      setUnitIntent(null);
+    }
+    setRouteSteps([]);
+    setContextOpen(false);
+    setPanel("orders");
+  }
+
   function openBuildAt(hexId: string) {
+    setRouteSteps([]);
     setSelectedHexId(hexId);
     setBuildHexId(hexId);
     setBuildTargeting(false);
@@ -528,6 +593,10 @@ export default function NetworkGameBoard({
 
   function clickHex(id: string) {
     setSelectedHexId(id);
+    if (planningRoute && routeSteps.includes(id)) {
+      setRouteSteps((current) => current.slice(0, current.indexOf(id) + 1));
+      return;
+    }
     if (!migrationMobileId) setSelectedReachAssetId(null);
     if (game.scenarioId === "first-horizon" && tutorialLessonId === "inspect") {
       const home = game.hexes.find((hex) => hex.kind === "home" && hex.originalOwner === playerId)?.id;
@@ -561,36 +630,7 @@ export default function NetworkGameBoard({
       return;
     }
     if (militaryTargeting && militaryTargets.includes(id)) {
-      const selected = [...taskForceIds];
-      const path = playerId !== undefined && portalNeighbors(game, playerId, militaryOrigin!).includes(id) ? [id] : shortestPath(
-        militaryOrigin!,
-        id,
-        map,
-        (step) =>
-          !!game.hexes.find(
-            (hex) => hex.id === step && hex.revealed && hex.kind !== "rift",
-          ),
-      );
-      setDraft((current) => [
-        ...current.filter(
-          (order) =>
-            (order.kind !== "carrierMove" || !order.carrierIds.some((carrierId) => selected.includes(carrierId))) &&
-            (order.kind !== "bombard" || !selected.includes(order.carrierId) ||
-              (playerId !== undefined && legalBombardmentTargets(game, playerId, order.carrierId, undefined, id).some((target) => target.hexId === order.targetHexId))),
-        ),
-        {
-          id: uid("fleet"),
-          kind: "carrierMove",
-          carrierIds: selected,
-          destination: id,
-          path,
-        },
-      ]);
-      if (draft.some((order) => order.kind === "bombard" && selected.includes(order.carrierId) &&
-        (playerId === undefined || !legalBombardmentTargets(game, playerId, order.carrierId, undefined, id).some((target) => target.hexId === order.targetHexId))))
-        setDraftNotice("The drafted Bombardment was outside range after this move, so it was removed. Select the vessel again to choose a new target.");
-      setMilitaryTargeting(false);
-      setPanel("orders");
+      setRouteSteps((current) => [...current, id]);
       return;
     }
     if (unitIntent && mapUnit && unitTargets.includes(id)) {
@@ -642,63 +682,13 @@ export default function NetworkGameBoard({
         }
         return;
       }
-      const portalStep = playerId !== undefined && portalNeighbors(game, playerId, mapUnit.hex).includes(id);
-      const path = portalStep ? [id] :
-        unitIntent === "move"
-          ? shortestPath(mapUnit.hex, id, map, (step, final) => {
-              const hex = game.hexes.find((candidate) => candidate.id === step);
-              return (
-                !!hex &&
-                hex.kind !== "rift" &&
-                (mapUnit.kind === "explorer"
-                  ? hex.revealed || (player?.tech.Exploration || 1) >= 2 || final
-                  : hex.revealed)
-              );
-            })
-          : undefined;
-      if (mapUnit.kind === "explorer" && unitIntent === "move" && playerId !== undefined) {
-        const validation = validateExplorationPath(game, playerId, selectedExplorer?.id || mapUnit.id, id, path);
-        if (!validation.ok) {
-          setDraftNotice(validation.message);
-          return;
-        }
+      if (unitIntent === "move") {
+        setRouteSteps((current) => [...current, id]);
+        return;
       }
-      const order: SecretOrder =
-        unitIntent === "longRangeSurvey"
-          ? {
-              id: uid("survey"),
-              kind: "longRangeSurvey",
-              unitId: mapUnit.id,
-              hexId: id,
-            }
-          : mapUnit.kind === "explorer"
-            ? {
-                id: uid("explorer"),
-                kind: "explorerMove",
-                vesselId: selectedExplorer?.id || mapUnit.id,
-                destination: id,
-                path,
-              }
-            : mapUnit.kind === "colony"
-              ? { id: uid("colony"), kind: "colonyMove", vesselId: mapUnit.id, destination: id, path }
-              : {
-                  id: uid("civilian"),
-                  kind: "civilianMove",
-                  unitId: mapUnit.id,
-                  destination: id,
-                };
-      setDraft((current) => {
-        const keepFarboundScan = unitIntent === "move" && mapUnit.kind === "explorer" && player?.faction === "farbound";
-        const cleaned = keepFarboundScan
-          ? current.filter((candidate) => !((candidate.kind === "explorerMove" || candidate.kind === "explorerScan") && (candidate.vesselId || player?.explorationVessels[0]?.id) === mapUnit.id))
-          : removeUnitOrders(current, mapUnit);
-        return [...cleaned, order];
-      });
-      setDraftNotice(
-        unitIntent === "longRangeSurvey"
-          ? `Long-Range Survey of ${id} added to Orders.`
-          : `Move to ${id} added to Orders.`,
-      );
+      setDraft((current) => [...removeUnitOrders(current, mapUnit),
+        { id: uid("survey"), kind: "longRangeSurvey", unitId: mapUnit.id, hexId: id }]);
+      setDraftNotice(`Long-Range Survey of ${id} added to Orders.`);
       setUnitIntent(null);
       setPanel("orders");
       return;
@@ -729,6 +719,7 @@ export default function NetworkGameBoard({
     setContextOpen(true);
     setDockOpen(false);
     setUnitIntent(null);
+    setRouteSteps([]);
   }
   function notify(text: string) {
     setDraftNotice(text);
@@ -756,10 +747,18 @@ export default function NetworkGameBoard({
     );
   }
   const budget = player
-    ? projectedOrderBudget(viewGame, player.id, draft)
+    ? projectedOrderBudget(viewGame, player.id, displayedOrders)
     : undefined;
+  const budgetResources = (["material", "currency", "research", "influence"] as const);
+  const displayedCosts = player ? individualOrderCosts(viewGame, player.id, displayedOrders) : [];
+  const draftCosts = player && !sealedSubmission ? displayedCosts : player ? individualOrderCosts(viewGame, player.id, draft) : [];
+  const combatHexes = combatHexesFromReplays(game.turnReplays);
   const idleUnits = player ? uncommandedUnits(viewGame, player.id, displayedOrders) : [];
   function focusUncommanded(unit: UncommandedUnit) {
+    if (!player) return;
+    setUnitIntent(null);
+    setMilitaryTargeting(false);
+    setRouteSteps([]);
     setPanel("map");
     setDockOpen(false);
     setSelectedHexId(unit.hex);
@@ -770,7 +769,7 @@ export default function NetworkGameBoard({
       setTaskForceIds([unit.id]);
     } else if (unit.kind !== "mobile") {
       setTaskForceIds([]);
-      const icon = unit.kind === "explorer" ? game.players[player!.id].explorationVessels.find((item) => item.id === unit.id)?.type || "exploration" : unit.kind === "colony" ? "colony" : game.civilianUnits.find((item) => item.id === unit.id)?.type || "prospector";
+      const icon = unit.kind === "explorer" ? player.explorationVessels.find((item) => item.id === unit.id)?.type || "exploration" : unit.kind === "colony" ? "colony" : game.civilianUnits.find((item) => item.id === unit.id)?.type || "prospector";
       setMapUnit({ kind: unit.kind, id: unit.id, hex: unit.hex, icon } as MapUnit);
     } else { setMapUnit(null); setTaskForceIds([]); }
     requestAnimationFrame(() => mapViewportRef.current?.querySelector<HTMLElement>(`[data-hex-id="${unit.hex}"]`)?.scrollIntoView({ block: "center", inline: "center" }));
@@ -812,6 +811,11 @@ export default function NetworkGameBoard({
     (game.turn - 1) % 4 === 0 &&
     !hidden?.selected &&
     !hasMandatoryCombatCleanup;
+  const policyVoteRequired = !!player && !!hidden?.selected && !hasMandatoryCombatCleanup &&
+    (game.turn - 1) % 4 === 0 && !!game.policyElection?.choices.length &&
+    game.policyElection.era === game.era && !game.policyElection.votingClosed &&
+    !game.policyElection.votes.some((vote) => vote.playerId === player.id) &&
+    !game.orderProtocol.submissions.some((submission) => submission.playerId === player.id);
   const capturedCenters = captureHexId
     ? game.hexes.find((hex) => hex.id === captureHexId)?.centers || []
     : [];
@@ -899,6 +903,11 @@ export default function NetworkGameBoard({
         : !!selectedCivilian &&
           selectedCivilian.readyTurn <= game.turn &&
           selectedCivilian.movesRemaining > 0;
+  const selectedMover = selectedExplorer || selectedColony || selectedCivilian;
+  const moveReason = !canDraft ? "Orders cannot be changed during this phase."
+    : selectedMover && selectedMover.readyTurn > game.turn ? "This vessel is ready to move next Turn."
+    : selectedMover && selectedMover.movesRemaining <= 0 ? "This vessel has used its movement for this Turn."
+    : "";
   const prospectHex =
     selectedCivilian?.type === "prospector"
       ? game.hexes.find((hex) => hex.id === selectedCivilian.hex)
@@ -989,6 +998,7 @@ export default function NetworkGameBoard({
       playerId:
         proposal.kind === "technology" ? proposal.seller : proposal.from,
     })),
+    ...publicFeedItems(game).slice(0, 8).map((entry) => ({ ...entry, type: "public-feed" })),
     ...session.summary.recentEvents
       .slice(-8)
       .reverse()
@@ -1136,6 +1146,7 @@ export default function NetworkGameBoard({
     if (rightPanels.includes(next)) {
       setRightDrawerOpen(true);
       setDockOpen(false);
+      setContextOpen(false);
     } else {
       setRightDrawerOpen(false);
       if (!fullScreenPanels.includes(next)) setDockOpen(true);
@@ -1153,7 +1164,7 @@ export default function NetworkGameBoard({
 
   function openActivity(item: ActivityItem) {
     if (item.type === "proposal") openDiplomacy(item.playerId);
-    else if (item.type === "message") selectPanel("communications");
+    else if (item.type === "message" || item.type === "public-feed") selectPanel("communications");
     else if (item.type === "hidden") selectPanel("legacy");
     else if (item.type === "orders") selectPanel("orders");
     else if (item.type === "capture" || item.type === "redistribution") selectPanel("military");
@@ -1167,7 +1178,7 @@ export default function NetworkGameBoard({
 
   return (
     <main
-      className="game-shell network-alpha"
+      className={`game-shell network-alpha${contextOpen ? " context-visible" : ""}`}
       data-theme={game.themeId}
       data-spectator={spectator}
       data-dock={dockOpen ? "open" : "closed"}
@@ -1502,10 +1513,12 @@ export default function NetworkGameBoard({
                           <button
                             className="primary"
                             disabled={!canDraft || !canMoveSelected}
-                            onClick={() => setUnitIntent("move")}
+                            title={moveReason}
+                            onClick={() => { setRouteSteps([]); setUnitIntent("move"); }}
                           >
                             Move
                           </button>
+                          {moveReason && <small className="context-reason">{moveReason}</small>}
                           {mapUnit.kind === "colony" && (
                             <button
                               disabled={!canDraft || !!establishReason}
@@ -1572,9 +1585,9 @@ export default function NetworkGameBoard({
                     draft={draft}
                     setDraft={setDraft}
                     selectedIds={taskForceIds}
-                    setSelectedIds={setTaskForceIds}
+                    setSelectedIds={(ids) => { setTaskForceIds(ids); setRouteSteps([]); }}
                     targeting={militaryTargeting}
-                    beginTargeting={() => setMilitaryTargeting(true)}
+                    beginTargeting={() => { setRouteSteps([]); setMilitaryTargeting(true); }}
                     busy={busy}
                     onCommand={onCommand}
                   />
@@ -1617,7 +1630,7 @@ export default function NetworkGameBoard({
                         ? "Review the queue and projected cost, then seal when ready."
                         : "Your Orders are sealed for this Turn."}
                     </p>
-                    <PolicyVotePanel game={viewGame} playerId={player.id} draft={draft} setDraft={setDraft}/>
+                    {(game.turn - 1) % 4 === 0 && !!game.policyElection?.choices.length && !game.policyElection.votingClosed && <p className="policy-orders-reminder">The Era Policy ballot is in Legacy. Seal it there before you seal Orders.</p>}
                     <div className="orders-secondary-actions">
                       {!!game.turnReplays?.length && <button onClick={() => openReplay()}>View Previous Orders</button>}
                       <button aria-expanded={hintsOpen} onClick={() => setHintsOpen(!hintsOpen)}>{hintsOpen ? "Hide suggestions" : "Show Turn suggestions"}</button>
@@ -1728,8 +1741,8 @@ export default function NetworkGameBoard({
               {!!game.turnReplays?.length && <button onClick={() => openReplay()}>Previous Orders</button>}
             </div>
           </div>
-          {activeTargets.length > 0 && (
-            <div className="network-target-prompt">
+          {(activeTargets.length > 0 || planningRoute && routeSteps.length > 0) && (
+            <div className={`network-target-prompt ${planningRoute ? "route-planner" : ""}`}>
               <span>
                 <b>{migrationMobile ? mobileHabitatLibrary[migrationMobile.type].name : bombardCarrier ? carrierLibrary[bombardCarrier.type].name : selectedUnitName}</b>
                 <small>
@@ -1752,8 +1765,17 @@ export default function NetworkGameBoard({
                   : unitIntent === "longRangeSurvey" ||
                 unitIntent === "farboundScan" || unitIntent === "wayfarerRecon"
                   ? "Choose an unrevealed sector"
-                  : "Choose a highlighted destination"}
+                  : planningRoute ? "Tap adjacent highlighted hexes, then confirm the complete route" : "Choose a highlighted destination"}
               </strong>
+              {planningRoute && routeOrigin && <div className="route-preview" aria-live="polite">
+                <b>Route: {routeOrigin}{routeSteps.map((step) => ` → ${step}`).join("")}</b>
+                <small>{routeSteps.length} of {militaryTargeting ? militaryMovement : unitRange} movement selected</small>
+                {routeWarnings.length > 0 && <strong className="route-danger">Known danger: {routeWarnings.join("; ")}. Moving fleets through hostile sectors can cause combat.</strong>}
+                {routeSteps.length > 0 && <div className="route-actions">
+                  <button type="button" onClick={() => setRouteSteps((current) => current.slice(0, -1))}>Undo last step</button>
+                  <button type="button" className={routeWarnings.length ? "route-confirm-danger" : "primary"} onClick={confirmRoute}>{routeWarnings.length ? "Confirm route through danger" : "Confirm route"}</button>
+                </div>}
+              </div>}
               <button
                 onClick={() => {
                   setUnitIntent(null);
@@ -1761,6 +1783,7 @@ export default function NetworkGameBoard({
                   setBombardCarrierId(null);
                   setMigrationMobileId(null);
                   setBuildTargeting(false);
+                  setRouteSteps([]);
                 }}
               >
                 Cancel
@@ -1769,7 +1792,7 @@ export default function NetworkGameBoard({
           )}
           <div
             ref={mapViewportRef}
-            className={`map-viewport ${mapGestures.dragging ? "dragging" : ""} ${activeTargets.length ? "targeting" : ""} ${migrationMobileId ? "migration-targeting" : ""}`}
+            className={`map-viewport ${mapGestures.dragging ? "dragging" : ""} ${activeTargets.length || planningRoute ? "targeting" : ""} ${migrationMobileId ? "migration-targeting" : ""}`}
             {...mapGestures.handlers}
           >
             <div
@@ -1785,8 +1808,10 @@ export default function NetworkGameBoard({
                     <button
                       key={hex.id}
                       data-hex-id={hex.id}
+                      data-route-step={planningRoute && routeSteps.includes(hex.id) ? routeSteps.indexOf(hex.id) + 1 : undefined}
+                      title={combatHexes.has(hex.id) ? `Combat occurred at ${hex.id}` : `Hex ${hex.id}`}
                       onClick={() => clickHex(hex.id)}
-                      className={`hex ${hexColumnClass(hex.col)} ${hex.kind} ${hex.tier === "Arcology" ? "arcology" : ""} ${hex.enhancedCenterIndices?.length ? "enhanced-centers" : ""} ${hex.centers.includes("factory") ? "factory-installed" : ""} ${!hex.revealed ? "concealed" : ""} ${!hex.revealed && hex.surveyedBy?.includes(playerId ?? -1) ? "privately-surveyed" : ""} ${selectedHexId === hex.id ? "selected" : ""} ${activeTargets.includes(hex.id) ? "legal-target" : ""}`}
+                      className={`hex ${hexColumnClass(hex.col)} ${hex.kind} ${hex.tier === "Arcology" ? "arcology" : ""} ${hex.enhancedCenterIndices?.length ? "enhanced-centers" : ""} ${hex.centers.includes("factory") ? "factory-installed" : ""} ${!hex.revealed ? "concealed" : ""} ${!hex.revealed && hex.surveyedBy?.includes(playerId ?? -1) ? "privately-surveyed" : ""} ${selectedHexId === hex.id ? "selected" : ""} ${activeTargets.includes(hex.id) ? "legal-target" : ""} ${planningRoute && routeSteps.includes(hex.id) ? "route-step" : ""} ${combatHexes.has(hex.id) ? "combat-history" : ""}`}
                       style={
                         {
                           gridColumn: hex.col + 1,
@@ -1861,9 +1886,7 @@ export default function NetworkGameBoard({
                               key={vessel.id}
                               className={`map-unit ${mapUnit?.id === vessel.id ? "selected" : ""} ${orderIndex >= 0 ? "drafted" : ""}`}
                               aria-label={`${owner.name} ${explorationLibrary[vessel.type].name} at ${hex.id}`}
-                              onClick={() =>
-                                owner.id === playerId && selectMapUnit(unit)
-                              }
+                              onClick={() => planningRoute ? clickHex(hex.id) : owner.id === playerId && selectMapUnit(unit)}
                             >
                               <ShipIcon type={unit.icon} color={owner.color} />
                               {orderIndex >= 0 && (
@@ -1891,9 +1914,7 @@ export default function NetworkGameBoard({
                               key={vessel.id}
                               className={`map-unit ${mapUnit?.id === vessel.id ? "selected" : ""} ${orderIndex >= 0 ? "drafted" : ""}`}
                               aria-label={`${owner.name} Colony Ship at ${hex.id}`}
-                              onClick={() =>
-                                owner.id === playerId && selectMapUnit(unit)
-                              }
+                              onClick={() => planningRoute ? clickHex(hex.id) : owner.id === playerId && selectMapUnit(unit)}
                             >
                               <ShipIcon type="colonyShip" color={owner.color} />
                               {orderIndex >= 0 && (
@@ -1922,10 +1943,7 @@ export default function NetworkGameBoard({
                               key={unit.id}
                               className={`map-unit ${mapUnit?.id === unit.id ? "selected" : ""} ${orderIndex >= 0 ? "drafted" : ""}`}
                               aria-label={`${civilianLibrary[unit.type].name} at ${hex.id}`}
-                              onClick={() =>
-                                unit.owner === playerId &&
-                                selectMapUnit(mapUnitValue)
-                              }
+                              onClick={() => planningRoute ? clickHex(hex.id) : unit.owner === playerId && selectMapUnit(mapUnitValue)}
                             >
                               <ShipIcon
                                 type={unit.type}
@@ -1952,9 +1970,11 @@ export default function NetworkGameBoard({
                               className={`map-unit carrier ${selectedCarrier?.id === carrier.id ? "selected" : ""} ${orderIndex >= 0 ? "drafted" : ""}`}
                               aria-label={`${carrier.type} with ${carrier.cu} Combat Units at ${hex.id}`}
                               onClick={() => {
+                                if (planningRoute) return clickHex(hex.id);
                                 if (carrier.owner === playerId) {
                                   setBombardCarrierId(null);
                                   setTaskForceIds([carrier.id]);
+                                  setRouteSteps([]);
                                   setSelectedHexId(hex.id);
                                   setMapUnit(null);
                                   setSelectedReachAssetId(null);
@@ -1978,13 +1998,13 @@ export default function NetworkGameBoard({
                           );
                         })}
                       {game.mobileHabitats.filter((mobile) => mobile.hex === hex.id).map((mobile) => (
-                        <button type="button" key={mobile.id} className={`map-unit reach-asset mobile-habitat mobile-${mobile.type} ${mobile.deployed ? "deployed" : "migrating"} ${selectedReachAssetId === mobile.id ? "selected" : ""}`} style={{ "--unit-color": game.players[mobile.owner].color } as React.CSSProperties} aria-label={`Select ${game.players[mobile.owner].name} ${mobile.type} with ${mobile.centers.length} Centers and ${mobile.caravanGuards} Caravan Guards at ${hex.id}`} title={`${mobileHabitatLibrary[mobile.type].name} · owned by ${game.players[mobile.owner].name} · ${mobile.centers.length} Centers · ${mobile.caravanGuards} Guards`} onClick={() => { setSelectedReachAssetId(mobile.id); setSelectedHexId(hex.id); setMapUnit(null); setTaskForceIds([]); setPanel("map"); setDockOpen(false); setContextOpen(true); }}>
+                        <button type="button" key={mobile.id} className={`map-unit reach-asset mobile-habitat mobile-${mobile.type} ${mobile.deployed ? "deployed" : "migrating"} ${selectedReachAssetId === mobile.id ? "selected" : ""}`} style={{ "--unit-color": game.players[mobile.owner].color } as React.CSSProperties} aria-label={`Select ${game.players[mobile.owner].name} ${mobile.type} with ${mobile.centers.length} Centers and ${mobile.caravanGuards} Caravan Guards at ${hex.id}`} title={`${mobileHabitatLibrary[mobile.type].name} · owned by ${game.players[mobile.owner].name} · ${mobile.centers.length} Centers · ${mobile.caravanGuards} Guards`} onClick={() => { if (planningRoute) return clickHex(hex.id); setSelectedReachAssetId(mobile.id); setSelectedHexId(hex.id); setMapUnit(null); setTaskForceIds([]); setPanel("map"); setDockOpen(false); setContextOpen(true); }}>
                           <ShipIcon type={mobile.type} color={game.players[mobile.owner].color} />
                           {mobile.caravanGuards > 0 && <small className="guard-count">G{mobile.caravanGuards}</small>}
                         </button>
                       ))}
                       {game.blockades.filter((blockade) => blockade.hex === hex.id && blockade.active).map((blockade) => (
-                        <button type="button" key={blockade.id} className={`map-unit reach-asset blockade-marker ${selectedReachAssetId === blockade.id ? "selected" : ""}`} style={{ "--unit-color": game.players[blockade.owner].color } as React.CSSProperties} aria-label={`Select ${game.players[blockade.owner].name} Blockade Platform at ${hex.id}`} title={`Blockade Platform · owned by ${game.players[blockade.owner].name} · 4 CS`} onClick={() => { setSelectedReachAssetId(blockade.id); setSelectedHexId(hex.id); setMapUnit(null); setTaskForceIds([]); setPanel("map"); setDockOpen(false); setContextOpen(true); }}><ShipIcon type="blockade" color={game.players[blockade.owner].color}/><small>4</small></button>
+                        <button type="button" key={blockade.id} className={`map-unit reach-asset blockade-marker ${selectedReachAssetId === blockade.id ? "selected" : ""}`} style={{ "--unit-color": game.players[blockade.owner].color } as React.CSSProperties} aria-label={`Select ${game.players[blockade.owner].name} Blockade Platform at ${hex.id}`} title={`Blockade Platform · owned by ${game.players[blockade.owner].name} · 4 CS`} onClick={() => { if (planningRoute) return clickHex(hex.id); setSelectedReachAssetId(blockade.id); setSelectedHexId(hex.id); setMapUnit(null); setTaskForceIds([]); setPanel("map"); setDockOpen(false); setContextOpen(true); }}><ShipIcon type="blockade" color={game.players[blockade.owner].color}/><small>4</small></button>
                       ))}
                     </div>
                   ))}
@@ -2021,12 +2041,13 @@ export default function NetworkGameBoard({
                 </>
               )}
             </div>
+            {!!selectedHex.centers.length && <div className="selected-centers"><span>CENTERS</span><strong>{selectedHex.centers.map((center, index) => <span key={`${center}-${index}`} className={`resource-${center}`}><ResourceGlyph resource={center === "factory" || center === "defense" ? "material" : center} label={false}/>{center === "factory" ? "Factory" : center === "defense" ? "Defense Grid" : center}</span>)}</strong></div>}
             <HexDetails game={viewGame} hex={selectedHex} />
           </div>
         </section>
       </div>
-      {player && !game.result && <section className="running-orders" aria-label="Your Orders"><header><b>{sealedSubmission ? "Sealed Orders" : "Your Order queue"}</b><small>{displayedOrders.length} Orders</small></header><div className="running-orders-scroll">{displayedOrders.map((order, index) => <article key={order.id}><span>{index + 1}. {orderLabel(order)}</span>{!sealedSubmission && <button aria-label={`Remove ${orderLabel(order)}`} onClick={() => setDraft((current) => current.filter((entry) => entry.id !== order.id))}>Remove</button>}</article>)}{!displayedOrders.length && <span>No Orders queued. Select a vessel or Habitat to begin.</span>}</div>{sealedSubmission ? <button disabled={busy} onClick={() => void unseal()}>Unseal Orders</button> : <button className="running-seal-action" onClick={() => setSealReviewOpen(true)}>Review and seal</button>}</section>}
-      {player && !fullScreenPanels.includes(panel) && <div className={`network-drawer-system ${rightDrawerOpen && rightPanels.includes(panel) ? "open" : ""}`}>
+      {player && !game.result && <section className="running-orders" aria-label="Your Orders"><header><b>{sealedSubmission ? "Sealed Orders" : "Your Order queue"}</b><small>{displayedOrders.length} Orders</small><small>Total: {formatPurchaseCost(totalOrderCost(viewGame, player.id, displayedOrders))}</small><small className={budget?.error ? "warning" : ""}>Left: {budget?.error || `${budgetResources.map((resource) => `${budget?.remaining.resources[resource] ?? 0}${resource[0].toUpperCase()}`).join(" · ")} · ${budget?.remaining.labor ?? 0}L`}</small></header><div className="running-orders-scroll">{displayedOrders.map((order, index) => <article key={order.id}><span>{index + 1}. {orderLabel(order)}<small>{formatPurchaseCost(displayedCosts[index])}</small></span>{!sealedSubmission && <button aria-label={`Remove ${orderLabel(order)}`} onClick={() => setDraft((current) => current.filter((entry) => entry.id !== order.id))}>Remove</button>}</article>)}{!displayedOrders.length && <span>No Orders queued. Select a vessel or Habitat to begin.</span>}</div>{sealedSubmission ? <button disabled={busy} onClick={() => void unseal()}>Unseal Orders</button> : <button className="running-seal-action" onClick={() => setSealReviewOpen(true)}>Review and seal</button>}</section>}
+      {player && session.summary.status === "active" && !game.result && !hiddenRequired && !policyVoteRequired && !fullScreenPanels.includes(panel) && <div className={`network-drawer-system ${rightDrawerOpen && rightPanels.includes(panel) ? "open" : ""}`}>
         <nav className="network-drawer-tabs" aria-label="Right side menus">{rightPanels.map((id) => <button type="button" key={id} data-panel={id} className={panel === id && rightDrawerOpen ? "active" : ""} aria-expanded={panel === id && rightDrawerOpen} onClick={() => { if (panel === id && rightDrawerOpen) { setRightDrawerOpen(false); if (id === "build") setBuildTargeting(false); } else selectPanel(id); }}><CommandIcon name={id}/><span>{panelLabels[id].label}</span>{id === "legacy" && hiddenRequired && <sup aria-label="Hidden objective required">!</sup>}</button>)}</nav>
         {rightDrawerOpen && rightPanels.includes(panel) && <aside className="network-side-drawer" data-panel={panel} aria-label={`${panelLabels[panel].label} menu`}>
           <header><div><span>COMMAND SYSTEM</span><h2>{panelLabels[panel].label}</h2></div><button type="button" aria-label="Collapse right menu" onClick={() => { setRightDrawerOpen(false); if (panel === "build") setBuildTargeting(false); }}>Close ‹</button></header>
@@ -2111,13 +2132,16 @@ export default function NetworkGameBoard({
               <button
                 className="primary"
                 disabled={!canDraft || !canMoveSelected}
+                title={moveReason}
                 onClick={() => {
+                  setRouteSteps([]);
                   setUnitIntent("move");
                   setContextOpen(false);
                 }}
               >
                 Move
               </button>
+              {moveReason && <small className="context-reason">{moveReason}</small>}
               {selectedExplorer &&
                 explorationLibrary[selectedExplorer.type].tech >= 2 && (
                   <button
@@ -2233,6 +2257,7 @@ export default function NetworkGameBoard({
                   selectedCarrier.cu < 1 || selectedCarrierBombardTwo || selectedCarrierCargoDrafted
                 }
                 onClick={() => {
+                  setRouteSteps([]);
                   setMilitaryTargeting(true);
                   setContextOpen(false);
                 }}
@@ -2441,9 +2466,14 @@ export default function NetworkGameBoard({
                 <NetworkDiplomacyPanel
                   key={diplomacyTargetId ?? "default"}
                   game={viewGame}
+                  draft={draft}
                   playerId={player.id}
                   busy={busy}
-                  onCommand={onCommand}
+                  onCommand={async (command) => {
+                    if (canDraft && !sealedSubmission && JSON.stringify(session.privateDraft || []) !== JSON.stringify(draft))
+                      await onCommand({ kind: "saveDraft", orders: draft });
+                    await onCommand(command);
+                  }}
                   initialTargetId={diplomacyTargetId}
                 />
               )}
@@ -2487,14 +2517,13 @@ export default function NetworkGameBoard({
           ))}
         </div>
       )}
-      {hiddenRequired && player && game.scenarioId !== "first-horizon" && (
+      {(hiddenRequired || policyVoteRequired) && player && game.scenarioId !== "first-horizon" && (
         <div className="handoff-overlay hidden-required-overlay">
           <div className="hidden-required-card">
-            <p>ERA {game.era} OBJECTIVE REQUIRED</p>
-            <h1>Select your Hidden Legacy</h1>
+            <p>ERA {game.era} OPENING DECISIONS</p>
+            <h1>{hiddenRequired ? "Select your Hidden Legacy" : "Seal your Policy ballot"}</h1>
             <span>
-              Choose your private objective before accessing the map, diplomacy,
-              economy, or Orders for this Era.
+              Choose your private objective and seal a Policy ballot before entering this Era. Abstaining is always allowed.
             </span>
             <NetworkLegacyPanel
               game={viewGame}
@@ -2551,8 +2580,8 @@ export default function NetworkGameBoard({
       {sealReviewOpen && player && !sealedSubmission && <div className="seal-review-overlay" role="dialog" aria-modal="true" aria-labelledby="seal-review-title" onClick={(event) => { if (event.target === event.currentTarget) setSealReviewOpen(false); }}>
         <section className="seal-review-card">
           <header><span>TURN {game.turn} · PRIVATE ORDER REVIEW</span><h2 id="seal-review-title">Confirm sealed Orders</h2></header>
-          <div className="seal-review-list">{draft.length ? draft.map((order, index) => <div key={order.id}><b>{index + 1}</b><span>{orderLabel(order)}</span></div>) : <p>No Orders queued. Confirming issues Hold for this Turn.</p>}</div>
-          <div className="seal-review-summary"><span>Projected cost</span><b>{formatPurchaseCost(totalOrderCost(viewGame, player.id, draft))}</b><span>Budget</span><b className={budget?.error ? "warning" : ""}>{budget?.error || "Valid"}</b></div>
+          <div className="seal-review-list">{draft.length ? draft.map((order, index) => <div key={order.id}><b>{index + 1}</b><span>{orderLabel(order)} · {formatPurchaseCost(draftCosts[index])}</span></div>) : <p>No Orders queued. Confirming issues Hold for this Turn.</p>}</div>
+          <div className="seal-review-summary"><span>Projected cost</span><b>{formatPurchaseCost(totalOrderCost(viewGame, player.id, draft))}</b><span>Remaining</span><b className={budget?.error ? "warning" : ""}>{budget?.error || `${budgetResources.map((resource) => `${budget?.remaining.resources[resource] ?? 0}${resource[0].toUpperCase()}`).join(" · ")} · ${budget?.remaining.labor ?? 0}L`}</b></div>
           {((game.turn - 1) % 4 === 0 && !hidden?.selected) && <p className="seal-review-warning">Select your Hidden Legacy objective before sealing.</p>}
           <footer><button onClick={() => setSealReviewOpen(false)}>Cancel</button><button className="primary" disabled={!canDraft || busy || sealingOrders || !!budget?.error || ((game.turn - 1) % 4 === 0 && !hidden?.selected)} onClick={() => void sealOrders({ kind: "submitOrders", orders: draft })}>{sealingOrders ? "Sealing..." : "Confirm and seal Orders"}</button></footer>
         </section>

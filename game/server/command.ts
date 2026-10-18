@@ -39,6 +39,7 @@ export type RoomCommand =
   | { kind: "unsealOrders" }
   | { kind: "drawHidden" }
   | { kind: "selectHidden"; cardId: string }
+  | { kind: "sealPolicyVote"; policyId: string; influence: number }
   | { kind: "setHiddenCompleted"; completed: boolean }
   | { kind: "claimUniversal"; objectiveId: string }
   | { kind: "claimCivilization"; objectiveId: string }
@@ -137,6 +138,7 @@ export function roomCommandLabel(command: RoomCommand): string {
     case "unsealOrders": return "Reopen private Orders";
     case "drawHidden": return "Draw Hidden Legacy choices";
     case "selectHidden": return "Select Hidden Legacy";
+    case "sealPolicyVote": return "Seal private Policy ballot";
     case "setHiddenCompleted": return "Update Hidden Legacy completion";
     case "claimUniversal": return "Claim Universal Legacy";
     case "claimCivilization": return "Claim Civilization Legacy";
@@ -188,7 +190,7 @@ const commandKinds = new Set([
   "unsealOrders",
   "setReady", "selectFaction", "setBotFaction", "startGame", "pauseGame", "resumeGame", "endGame",
   "submitFeedback",
-  "convertSeatToBot", "setBotDifficulty", "convertSeatToHuman", "resetHumanSeat", "setSeatReady", "postHostNotice", "setTurnTimer", "setAutoStart", "setRoomName", "transferHost", "beginOrders", "drawHidden", "selectHidden", "setHiddenCompleted",
+  "convertSeatToBot", "setBotDifficulty", "convertSeatToHuman", "resetHumanSeat", "setSeatReady", "postHostNotice", "setTurnTimer", "setAutoStart", "setRoomName", "transferHost", "beginOrders", "drawHidden", "selectHidden", "sealPolicyVote", "setHiddenCompleted",
   "claimUniversal", "claimCivilization", "submitOrders", "saveDraft", "advanceTutorial", "dismissTutorial", "tutorialEvent", "advanceAcademy", "restartAcademyStage", "dismissAcademy", "showAcademy", "academyEvent", "proposeTrade", "proposeBlockadeSale", "proposeBlockadeCommission",
   "counterTrade", "proposeAgreement", "proposeTechnology", "respondProposal", "cancelProposal",
   "createChat", "sendChat", "markChatRead", "setChatMuted", "setPlayerBlocked", "reportChatMessage",
@@ -259,6 +261,10 @@ export function validateRoomCommand(value: unknown): RoomCommand {
     throw new Error("Room names must contain no more than 48 characters.");
   if (command.kind === "setGatePledge" && (!Number.isInteger(command.amount) || Number(command.amount) < 0 || Number(command.amount) > 9))
     throw new Error("Gate pledges must be between zero and nine Tributes.");
+  if (command.kind === "sealPolicyVote" &&
+      (typeof command.policyId !== "string" || command.policyId.length > 80 ||
+        !Number.isInteger(command.influence) || Number(command.influence) < 0 || Number(command.influence) > 99))
+    throw new Error("Choose a valid Policy ballot and whole Influence amount.");
   if (command.kind === "tutorialEvent" && !["panel-opened", "hex-inspected"].includes(String(command.event)))
     throw new Error("Choose a valid First Horizon interaction event.");
   if (command.kind === "academyEvent" && command.event !== "panel-opened")

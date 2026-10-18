@@ -120,8 +120,16 @@ function normalizedPath(origin: string, destination: string, path?: string[]) {
   return steps;
 }
 
+function findExplorationVessel(player: GameState["players"][number], vesselId?: string) {
+  // Older orders without an ID refer to the primary vessel. An explicit ID
+  // must never silently select a different vessel after a room update.
+  return vesselId && vesselId !== "explorer"
+    ? player.explorationVessels?.find((unit) => unit.id === vesselId)
+    : player.explorationVessels?.[0];
+}
+
 export function validateExplorationPath(game: GameState, playerId: number, vesselId: string | undefined, destination: string, path?: string[]) {
-  const player = game.players[playerId], vessel = (player.explorationVessels || []).find((unit) => unit.id === vesselId) || player.explorationVessels?.[0];
+  const player = game.players[playerId], vessel = findExplorationVessel(player, vesselId);
   if (!vessel || vessel.readyTurn > game.turn) return { ok: false, message: "Select a ready Exploration vessel." };
   const steps = normalizedPath(vessel.hex, destination, path), map = mapLibrary[game.mapId];
   if (!steps.length || steps.length > vessel.movesRemaining) return { ok: false, message: "That path exceeds this vessel's movement." };
@@ -143,7 +151,7 @@ export function validateExplorationPath(game: GameState, playerId: number, vesse
 export function moveExplorationVessel(game: GameState, playerId: number, vesselId: string | undefined, destination: string, path?: string[]) {
   const validation = validateExplorationPath(game, playerId, vesselId, destination, path);
   if (!validation.ok) return validation;
-  const player = game.players[playerId], vessel = (player.explorationVessels || []).find((unit) => unit.id === vesselId) || player.explorationVessels[0];
+  const player = game.players[playerId], vessel = findExplorationVessel(player, vesselId)!;
   const steps = normalizedPath(vessel.hex, destination, path), map = mapLibrary[game.mapId];
   const portalSteps = steps.reduce((count, id, index) => count + Number(!getNeighbors(index ? steps[index - 1] : vessel.hex, map).includes(id)), 0);
   let current = vessel.hex;
@@ -162,7 +170,7 @@ export function moveExplorationVessel(game: GameState, playerId: number, vesselI
 }
 
 export function scanWithExplorationVessel(game: GameState, playerId: number, vesselId: string | undefined, hexIds: string[]) {
-  const player = game.players[playerId], vessel = (player.explorationVessels || []).find((unit) => unit.id === vesselId) || player.explorationVessels?.[0];
+  const player = game.players[playerId], vessel = findExplorationVessel(player, vesselId);
   if (!vessel || explorationLibrary[vessel.type].tech < 2 || vessel.readyTurn > game.turn) return { ok: false, message: "Scanning requires a ready Survey Vessel or better." };
   if (hexIds.length < 1 || hexIds.length + (vessel.publicReveals || 0) > explorationRevealAllowance(player.tech.Exploration)) return { ok: false, message: "That scan exceeds this vessel's reveal limit." };
   const neighbors = getNeighbors(vessel.hex, mapLibrary[game.mapId]);
@@ -178,7 +186,7 @@ export function scanWithExplorationVessel(game: GameState, playerId: number, ves
 }
 
 export function farboundForwardScan(game: GameState, playerId: number, vesselId: string | undefined, hexId: string) {
-  const player = game.players[playerId], vessel = (player.explorationVessels || []).find((unit) => unit.id === vesselId) || player.explorationVessels?.[0], hex = game.hexes.find((candidate) => candidate.id === hexId);
+  const player = game.players[playerId], vessel = findExplorationVessel(player, vesselId), hex = game.hexes.find((candidate) => candidate.id === hexId);
   if (factionRules(player) !== "farbound" || !vessel) return { ok: false, message: "Forward Scanning is a Farbound Exploration ability." };
   if (vessel.readyTurn > game.turn) return { ok: false, message: "Select a ready Exploration vessel." };
   if (player.forwardScanUsedTurn === game.turn) return { ok: false, message: "Forward Scanning was already used this Turn." };

@@ -988,17 +988,19 @@ export function evaluateLegacy(game: GameState) {
     const qualifying = game.players.filter((p) =>
       universalSatisfied(game, p, objective.id),
     );
-    if (qualifying.length === 1) {
+    // Orders resolve together. Every civilization that first satisfies a
+    // shared objective in the same resolution earns it before it closes.
+    if (qualifying.length > 0) for (const contender of qualifying) {
       awardLegacy(
         game,
-        qualifying[0].id,
+        contender.id,
         "universal",
         objective.lp,
         objective.name,
       );
       game.universalClaims.push({
         objectiveId: objective.id,
-        playerId: qualifying[0].id,
+        playerId: contender.id,
         turn: game.turn,
         lp: objective.lp,
       });
@@ -1679,6 +1681,8 @@ export function manualClaimUniversal(
   const o = universalLegacy.find((x) => x.id === id);
   if (
     !o ||
+    o.automatic ||
+    !legacyObjectiveProgress(game, playerId, id).complete ||
     game.universalClaims.some((c) => c.objectiveId === id) ||
     o.era > game.era
   )
@@ -1699,7 +1703,7 @@ export function manualClaimCivilization(
 ) {
   const p = game.players[playerId],
     o = civilizationObjectives(p).find((x) => x.id === id);
-  if (!o || p.civilizationClaims.includes(id)) return false;
+  if (!o || o.automatic || !legacyObjectiveProgress(game, playerId, id).complete || p.civilizationClaims.includes(id)) return false;
   p.civilizationClaims.push(id);
   awardLegacy(game, playerId, "civilization", o.lp, o.name);
   return true;
